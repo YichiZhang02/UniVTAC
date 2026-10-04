@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from envs.utils.data import HDF5Handler
+from resources.envs.utils.data import HDF5Handler
 
 
 def compute_norm_stats(qpos_data, action_data, left_tac_data, right_tac_data):
@@ -273,7 +273,7 @@ def main():
     num = args.expert_data_num
 
     # 输入目录：TacArena 原始数据
-    load_dir = f"../../data/{task_name}/{task_config}/"
+    load_dir = f"../../resources/data/{task_name}/{task_config}/"
     
     # 输出目录：per-episode HDF5 文件
     save_dir = f"./data/{task_name}-{task_config}-{num}"

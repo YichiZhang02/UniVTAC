@@ -1,0 +1,34 @@
+S:
+  samples: 100000
+  epochs: 30
+  batch_size: 64
+  workers: 8
+  optimizer: Adam
+  precision: fp32
+  lr: 0.001
+  weight_decay: 0.0
+  warmup_epochs: 0
+  min_lr_ratio: 1.0
+  grad_clip: 0.0
+  val_fraction: 0.2
+  early_stop_patience: 3
+  multi_gpu: false
+  model:
+    foreground_weight: 50.0
+B:
+  samples: 100000
+  epochs: 30
+  batch_size: 64
+  workers: 8
+  optimizer: Adam
+  precision: bf16
+  lr: 0.0006
+  weight_decay: 0.0
+  warmup_epochs: 0
+  min_lr_ratio: 1.0
+  grad_clip: 1.0
+  val_fraction: 0.2
+  early_stop_patience: 3
+  multi_gpu: false
+  model:
+    foreground_weight: 50.0

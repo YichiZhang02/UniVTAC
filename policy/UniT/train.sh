@@ -16,7 +16,7 @@ python process_data.py "${task_name}" "${task_config}" "${expert_data_num}"
 python train.py \
   --config-dir=./ \
   --config-name="${train_config}" \
-  dataset_path="data/sim-${task_name}/${task_config}-${expert_data_num}" \
+  dataset_path="resources/data/sim-${task_name}/${task_config}-${expert_data_num}" \
   task_name="${task_name}" \
   training.seed="${seed}" \
   hydra.run.dir="unit_ckpt/unit-${task_name}/${task_config}-${expert_data_num}/${train_config}"

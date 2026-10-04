@@ -42,5 +42,5 @@ GPU         : $gpu_id
 "
 
 cd ../../
-# bash parallel_eval.sh $task_name $task_config Ablation/deploy $gpu_id
-bash eval_policy.sh $task_name $task_config Ablation/deploy $gpu_id
+# bash scripts/parallel_eval.sh $task_name $task_config Ablation/deploy $gpu_id
+bash test_policy.sh $task_name $task_config Ablation/deploy $gpu_id

@@ -1,0 +1,352 @@
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from __future__ import annotations
+
+########################################################################################
+# Utilities
+########################################################################################
+import logging
+import traceback
+from contextlib import nullcontext
+from copy import copy
+from functools import cache
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+import torch
+
+from policy.vla_common.pretrained import PreTrainedPolicy
+from policy.vla_common.utils import prepare_observation_for_inference
+from policy.vla_common.engine.utils.import_utils import _deepdiff_available, require_package
+
+if TYPE_CHECKING or _deepdiff_available:
+    from deepdiff import DeepDiff
+else:
+    DeepDiff = None
+
+if TYPE_CHECKING:
+    from policy.vla_common.datasets.lerobot_dataset import LeRobotDataset
+    from deployment.robots import Robot  # 仅类型检查，无运行时反向依赖
+from policy.vla_common.engine.processor.pipeline import PolicyProcessorPipeline
+from policy.vla_common.engine.processor.relative_action_processor import RelativeActionsProcessorStep
+from policy.vla_common.engine.types import PolicyAction
+
+
+def _lock_relative_action_anchor_for_new_chunk(
+    policy: PreTrainedPolicy,
+    preprocessor: PolicyProcessorPipeline[dict[str, Any], dict[str, Any]],
+) -> None:
+    """Lock the latest relative-action anchor when ``policy`` is about to replan."""
+    if not policy.is_action_queue_empty():
+        return
+
+    for step in preprocessor.steps:
+        if isinstance(step, RelativeActionsProcessorStep) and step.enabled:
+            step.lock_action_anchor()
+
+
+@cache
+def is_headless():
+    """
+    Detects if the Python script is running in a headless environment (e.g., without a display).
+
+    This function attempts to import `pynput`, a library that requires a graphical environment.
+    If the import fails, it assumes the environment is headless. The result is cached to avoid
+    re-running the check.
+
+    Returns:
+        True if the environment is determined to be headless, False otherwise.
+    """
+    try:
+        import pynput  # noqa
+
+        return False
+    except Exception:
+        print(
+            "Error trying to import pynput. Switching to headless mode. "
+            "As a result, the video stream from the cameras won't be shown, "
+            "and you won't be able to change the control flow with keyboards. "
+            "For more info, see traceback below.\n"
+        )
+        traceback.print_exc()
+        print()
+        return True
+
+
+def predict_action(
+    observation: dict[str, np.ndarray],
+    policy: PreTrainedPolicy,
+    device: torch.device,
+    preprocessor: PolicyProcessorPipeline[dict[str, Any], dict[str, Any]],
+    postprocessor: PolicyProcessorPipeline[PolicyAction, PolicyAction],
+    use_amp: bool,
+    task: str | None = None,
+    robot_type: str | None = None,
+):
+    """
+    Performs a single-step inference to predict a robot action from an observation.
+
+    This function encapsulates the full inference pipeline:
+    1. Prepares the observation by converting it to PyTorch tensors and adding a batch dimension.
+    2. Runs the preprocessor pipeline on the observation.
+    3. Feeds the processed observation to the policy to get a raw action.
+    4. Runs the postprocessor pipeline on the raw action.
+    5. Formats the final action by removing the batch dimension and moving it to the CPU.
+
+    Args:
+        observation: A dictionary of NumPy arrays representing the robot's current observation.
+        policy: The `PreTrainedPolicy` model to use for action prediction.
+        device: The `torch.device` (e.g., 'cuda' or 'cpu') to run inference on.
+        preprocessor: The `PolicyProcessorPipeline` for preprocessing observations.
+        postprocessor: The `PolicyProcessorPipeline` for postprocessing actions.
+        use_amp: A boolean to enable/disable Automatic Mixed Precision for CUDA inference.
+        task: An optional string identifier for the task.
+        robot_type: An optional string identifier for the robot type.
+
+    Returns:
+        A `torch.Tensor` containing the predicted action, ready for the robot.
+    """
+    observation = copy(observation)
+    with (
+        torch.inference_mode(),
+        torch.autocast(device_type=device.type) if device.type == "cuda" and use_amp else nullcontext(),
+    ):
+        # Convert to pytorch format: channel first and float32 in [0,1] with batch dimension
+        observation = prepare_observation_for_inference(observation, device, task, robot_type)
+        observation = preprocessor(observation)
+
+        # Relative actions in a predicted chunk are all expressed against the
+        # observation that generated that chunk. Lock it before select_action
+        # fills the queue, and keep it unchanged while queued actions are consumed.
+        _lock_relative_action_anchor_for_new_chunk(policy, preprocessor)
+
+        # Compute the next action with the policy
+        # based on the current observation
+        if (
+            getattr(policy.config, "action_mode", None) == "relative_rot6d"
+            and getattr(policy.config, "temporal_ensemble_coeff", None) is not None
+        ):
+            # Each prediction has a different TCP anchor. Blend decoded absolute
+            # TCP targets, never local residuals from different reference frames.
+            actions = postprocessor(policy.predict_action_chunk(observation))
+            action = policy.temporal_ensembler.update(actions)
+        else:
+            action = postprocessor(policy.select_action(observation))
+
+    return action
+
+
+def preprocess_policy_observation(
+    observation: dict[str, np.ndarray],
+    device: torch.device,
+    preprocessor: PolicyProcessorPipeline[dict[str, Any], dict[str, Any]],
+    task: str | None = None,
+    robot_type: str | None = None,
+):
+    """Update a stateful online preprocessor without running the policy."""
+    observation = copy(observation)
+    with torch.inference_mode():
+        observation = prepare_observation_for_inference(observation, device, task, robot_type)
+        return preprocessor(observation)
+
+
+def predict_action_chunk(
+    observation: dict[str, np.ndarray],
+    policy: PreTrainedPolicy,
+    device: torch.device,
+    preprocessor: PolicyProcessorPipeline[dict[str, Any], dict[str, Any]],
+    postprocessor: PolicyProcessorPipeline[PolicyAction, PolicyAction],
+    use_amp: bool,
+    task: str | None = None,
+    robot_type: str | None = None,
+):
+    """Predict and postprocess one complete action chunk from one observation anchor."""
+    observation = copy(observation)
+    with (
+        torch.inference_mode(),
+        torch.autocast(device_type=device.type) if device.type == "cuda" and use_amp else nullcontext(),
+    ):
+        observation = prepare_observation_for_inference(observation, device, task, robot_type)
+        observation = preprocessor(observation)
+
+        # Async inference bypasses policy.select_action(), so lock the relative-action
+        # anchor explicitly before predicting and decoding the complete chunk.
+        for step in preprocessor.steps:
+            if isinstance(step, RelativeActionsProcessorStep) and step.enabled:
+                step.lock_action_anchor()
+
+        actions = policy.predict_action_chunk(observation)
+        if actions.ndim != 3:
+            raise ValueError(
+                f"predict_action_chunk must return (batch, time, action), got {tuple(actions.shape)}"
+            )
+        offset = int(getattr(policy.config, "action_start_offset", 0))
+        count = int(getattr(policy.config, "n_action_steps", actions.shape[1] - offset))
+        if offset < 0 or count <= 0 or offset + count > actions.shape[1]:
+            raise ValueError(
+                "Invalid async action slice: "
+                f"offset={offset}, n_action_steps={count}, predicted_steps={actions.shape[1]}"
+            )
+        actions = postprocessor(actions[:, offset : offset + count])
+
+    return actions
+
+
+def init_keyboard_listener():
+    """
+    Initializes a non-blocking keyboard listener for real-time user interaction.
+
+    This function sets up a listener for specific keys (right arrow, left arrow, escape) to control
+    the program flow during execution, such as stopping recording or exiting loops. It gracefully
+    handles headless environments where keyboard listening is not possible.
+
+    Returns:
+        A tuple containing:
+        - The `pynput.keyboard.Listener` instance, or `None` if in a headless environment.
+        - A dictionary of event flags (e.g., `exit_early`) that are set by key presses.
+    """
+    # Allow to exit early while recording an episode or resetting the environment,
+    # by tapping the right arrow key '->'. This might require a sudo permission
+    # to allow your terminal to monitor keyboard events.
+    events = {}
+    events["exit_early"] = False
+    events["rerecord_episode"] = False
+    events["stop_recording"] = False
+    events["start_episode"] = False
+    events["toggle_gripper"] = 0
+
+    if is_headless():
+        logging.warning(
+            "Headless environment detected. On-screen cameras display and keyboard inputs will not be available."
+        )
+        listener = None
+        return listener, events
+
+    # Only import pynput if not in a headless environment
+    from pynput import keyboard
+
+    space_held = False
+    reset_keys_held = set()
+
+    def on_press(key):
+        nonlocal space_held
+        try:
+            if key == keyboard.Key.up:
+                print("Up arrow key pressed. Starting episode...")
+                events["start_episode"] = True
+            elif key == keyboard.Key.right:
+                if key in reset_keys_held:
+                    return
+                reset_keys_held.add(key)
+                events["exit_early"] = True
+            elif key == keyboard.Key.left:
+                if key in reset_keys_held:
+                    return
+                reset_keys_held.add(key)
+                events["rerecord_episode"] = True
+                events["exit_early"] = True
+            elif key == keyboard.Key.esc:
+                print("Escape key pressed. Stopping data recording...")
+                events["stop_recording"] = True
+                events["exit_early"] = True
+            elif key == keyboard.Key.space and not space_held:
+                space_held = True
+                print("Space key pressed. Toggling drag gripper...")
+                events["toggle_gripper"] += 1
+        except Exception as e:
+            print(f"Error handling key press: {e}")
+
+    def on_release(key):
+        nonlocal space_held
+        if key == keyboard.Key.space:
+            space_held = False
+        if key in (keyboard.Key.left, keyboard.Key.right):
+            reset_keys_held.discard(key)
+
+    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+    listener.start()
+
+    return listener, events
+
+
+def sanity_check_dataset_name(repo_id, policy_cfg):
+    """
+    Validates the dataset repository name against the presence of a policy configuration.
+
+    This function enforces a naming convention: a dataset repository ID should start with "eval_"
+    if and only if a policy configuration is provided for evaluation purposes.
+
+    Args:
+        repo_id: The Hugging Face Hub repository ID of the dataset.
+        policy_cfg: The configuration object for the policy, or `None`.
+
+    Raises:
+        ValueError: If the naming convention is violated.
+    """
+    _, dataset_name = repo_id.split("/")
+    # either repo_id doesnt start with "eval_" and there is no policy
+    # or repo_id starts with "eval_" and there is a policy
+
+    # Check if dataset_name starts with "eval_" but policy is missing
+    if dataset_name.startswith("eval_") and policy_cfg is None:
+        raise ValueError(
+            f"Your dataset name begins with 'eval_' ({dataset_name}), but no policy is provided."
+        )
+
+    # Check if dataset_name does not start with "eval_" but policy is provided
+    if not dataset_name.startswith("eval_") and policy_cfg is not None:
+        raise ValueError(
+            f"Your dataset name does not begin with 'eval_' ({dataset_name}), but a policy is provided ({policy_cfg.type})."
+        )
+
+
+def sanity_check_dataset_robot_compatibility(
+    dataset: LeRobotDataset, robot: Robot, fps: int, features: dict
+) -> None:
+    """
+    Checks if a dataset's metadata is compatible with the current robot and recording setup.
+
+    This function compares key metadata fields (`robot_type`, `fps`, and `features`) from the
+    dataset against the current configuration to ensure that appended data will be consistent.
+
+    Args:
+        dataset: The `LeRobotDataset` instance to check.
+        robot: The `Robot` instance representing the current hardware setup.
+        fps: The current recording frequency (frames per second).
+        features: The dictionary of features for the current recording session.
+
+    Raises:
+        ValueError: If any of the checked metadata fields do not match.
+    """
+    require_package("deepdiff", extra="deepdiff-dep")
+
+    from policy.vla_common.engine.utils.constants import DEFAULT_FEATURES
+
+    fields = [
+        ("robot_type", dataset.meta.robot_type, robot.robot_type),
+        ("fps", dataset.fps, fps),
+        ("features", dataset.features, {**features, **DEFAULT_FEATURES}),
+    ]
+
+    mismatches = []
+    for field, dataset_value, present_value in fields:
+        diff = DeepDiff(dataset_value, present_value, exclude_regex_paths=[r".*\['info'\]$"])
+        if diff:
+            mismatches.append(f"{field}: expected {present_value}, got {dataset_value}")
+
+    if mismatches:
+        raise ValueError(
+            "Dataset metadata compatibility check failed with mismatches:\n" + "\n".join(mismatches)
+        )

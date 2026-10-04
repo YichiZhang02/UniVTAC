@@ -1,18 +1,20 @@
+> 目录调整说明：下文保留旧的转换／发布流程记录。当前 `scripts/download_data.sh` 仅负责下载，支持 `--task`、`--contact`、`--checkpoint`；旧的 `setup/convert/upload/submit/all` 子命令已移除。下载用法见根目录 README，转换／发布工具分别位于 `scripts/oxt/`。
+
 # UniVTAC → OXT 数据迁移
 
-入口统一为 `data/download.sh`。默认目录都位于被 Git 忽略的 `data/` 下，可用环境变量覆盖：
+入口统一为 `scripts/download_data.sh`。默认目录都位于被 Git 忽略的 `resources/data/` 下，可用环境变量覆盖：
 
 ```bash
-bash data/download.sh setup
-bash data/download.sh download
-bash data/download.sh convert
-bash data/download.sh upload
-bash data/download.sh submit --dry-run
-bash data/download.sh submit
+bash scripts/download_data.sh setup
+bash scripts/download_data.sh download
+bash scripts/download_data.sh convert
+bash scripts/download_data.sh upload
+bash scripts/download_data.sh submit --dry-run
+bash scripts/download_data.sh submit
 ```
 
 其中 `upload` 是本地准备步骤；如果希望使用更准确的命令名，也可以执行与它等价的
-`bash data/download.sh package`。两者不要连续执行，否则第二次打包会因归档已存在而停止；
+`bash scripts/download_data.sh package`。两者不要连续执行，否则第二次打包会因归档已存在而停止；
 需要主动重建时可添加 `--overwrite`。
 
 建议在独立 Python/Conda 环境中执行 `setup`，避免数据工具依赖影响 Isaac Sim 环境。
@@ -20,7 +22,7 @@ bash data/download.sh submit
 也可以依次完成下载、转换和打包：
 
 ```bash
-bash data/download.sh all
+bash scripts/download_data.sh all
 ```
 
 常用环境变量：
@@ -72,9 +74,9 @@ precheck 和 VLM/QC，并将其输出加入 submission 目录，再向 OXT-QC �
 ## 全量服务器流程
 
 ```bash
-DOWNLOAD_WORKERS=16 CONVERT_WORKERS=8 bash data/download.sh all
-bash data/download.sh submit --dry-run
-bash data/download.sh submit
+DOWNLOAD_WORKERS=16 CONVERT_WORKERS=8 bash scripts/download_data.sh all
+bash scripts/download_data.sh submit --dry-run
+bash scripts/download_data.sh submit
 ```
 
 `all` 和 `upload` 都不会进行远程提交，避免转换完成后未经人工检查就产生外部发布。正式提交前至少核对

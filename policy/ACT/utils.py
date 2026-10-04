@@ -2,7 +2,13 @@ import numpy as np
 import torch
 import os
 import h5py
+import cv2
 from pathlib import Path
+import sys
+_encoder_dir = Path(__file__).resolve().parents[2] / 'encoder'
+if str(_encoder_dir) not in sys.path:
+    sys.path.insert(0, str(_encoder_dir))
+from modality import read_tactile, INPUT_CHANNELS
 from torch.utils.data import TensorDataset, DataLoader
 from torchvision import transforms
 
@@ -244,7 +250,76 @@ class TacArenaDataset(torch.utils.data.Dataset):
         return all_cam_images, all_tac_images, qpos_data, action_data, is_pad
 
 
-def load_data(dataset_dir, num_episodes, camera_names, tactile_names, batch_size_train, batch_size_val, chunk_size):
+class RawUniVTACDataset(torch.utils.data.Dataset):
+    """Read Isaac 5.1 demonstrations directly, preserving RGB channel order."""
+
+    tac_image_trans = TacArenaDataset.tac_image_trans
+    cam_image_trans = TacArenaDataset.cam_image_trans
+
+    def __init__(self, episode_ids, dataset_dir, camera_names, tactile_names, norm_stats, chunk_size, input_mode='marker_rgb'):
+        self.dataset_dir = Path(dataset_dir)
+        self.camera_names = camera_names
+        self.tactile_names = tactile_names
+        self.input_mode = input_mode
+        self.norm_stats = norm_stats
+        self.chunk_size = chunk_size
+        self._dataset = []
+        for episode_idx in episode_ids:
+            with h5py.File(self.dataset_dir / f'{episode_idx}.hdf5', 'r') as root:
+                length = len(root['embodiment/joint']) - 1
+            self._dataset.extend((episode_idx, step, min(step + chunk_size, length))
+                                 for step in range(length))
+
+    def __len__(self):
+        return len(self._dataset)
+
+    @staticmethod
+    def decode(buffer):
+        image = cv2.imdecode(np.frombuffer(buffer, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError('Failed to decode HDF5 image')
+        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    def __getitem__(self, index):
+        episode_idx, start, end = self._dataset[index]
+        cache = _worker_hdf5_cache.setdefault(threading.get_ident(), {})
+        path = str(self.dataset_dir / f'{episode_idx}.hdf5')
+        if path not in cache:
+            cache[path] = h5py.File(path, 'r')
+        root = cache[path]
+        joint = root['embodiment/joint']
+        qpos = joint[start, :8].astype(np.float32)
+        action = joint[start + 1:end + 1, :8].astype(np.float32)
+        padded_action = np.zeros((self.chunk_size, 8), dtype=np.float32)
+        padded_action[:len(action)] = action
+        is_pad = np.ones(self.chunk_size, dtype=bool)
+        is_pad[:len(action)] = False
+        camera_paths = {'cam_high': 'observation/head/rgb', 'cam_wrist': 'observation/wrist/rgb'}
+        cams = torch.stack([self.cam_image_trans(self.decode(root[camera_paths[name]][start]))
+                            for name in self.camera_names]) if self.camera_names else torch.empty(0)
+        tactile = torch.stack([read_tactile(root, name.removeprefix('tac_'), start, self.input_mode, 256)
+                               for name in self.tactile_names]) if self.tactile_names else torch.empty(0)
+        qpos = (torch.from_numpy(qpos) - self.norm_stats['qpos_mean']) / self.norm_stats['qpos_std']
+        actions = (torch.from_numpy(padded_action) - self.norm_stats['action_mean']) / self.norm_stats['action_std']
+        return cams, tactile, qpos, actions, torch.from_numpy(is_pad)
+
+
+def get_raw_norm_stats(dataset_dir, num_episodes):
+    states, actions = [], []
+    for episode_idx in range(num_episodes):
+        with h5py.File(Path(dataset_dir) / f'{episode_idx}.hdf5', 'r') as root:
+            joint = root['embodiment/joint'][:, :8]
+        states.append(joint[:-1])
+        actions.append(joint[1:])
+    qpos = np.concatenate(states).astype(np.float32)
+    action = np.concatenate(actions).astype(np.float32)
+    return {'qpos_mean': qpos.mean(0), 'qpos_std': np.maximum(qpos.std(0), 1e-2),
+            'action_mean': action.mean(0), 'action_std': np.maximum(action.std(0), 1e-2),
+            'example_qpos': states[0][0]}, max(map(len, actions))
+
+
+def load_data(dataset_dir, num_episodes, camera_names, tactile_names, batch_size_train, batch_size_val, chunk_size,
+              raw=False, num_workers=6, input_mode='marker_rgb'):
     print(f"\nData from: {dataset_dir}\n")
     # obtain train test split
     train_ratio = 0.8
@@ -253,29 +328,33 @@ def load_data(dataset_dir, num_episodes, camera_names, tactile_names, batch_size
     val_indices = shuffled_indices[int(train_ratio * num_episodes):]
 
     # obtain normalization stats for qpos and action
-    norm_stats, max_action_len = get_norm_stats(dataset_dir, num_episodes)
+    norm_stats, max_action_len = (get_raw_norm_stats if raw else get_norm_stats)(dataset_dir, num_episodes)
 
     # construct dataset and dataloader
     # train_dataset = EpisodicDataset(train_indices, dataset_dir, camera_names, tactile_names, norm_stats, max_action_len)
     # val_dataset = EpisodicDataset(val_indices, dataset_dir, camera_names, tactile_names, norm_stats, max_action_len)
-    train_dataset = TacArenaDataset(train_indices, dataset_dir, camera_names, tactile_names, norm_stats, chunk_size)
-    val_dataset = TacArenaDataset(val_indices, dataset_dir, camera_names, tactile_names, norm_stats, chunk_size)
+    dataset_class = RawUniVTACDataset if raw else TacArenaDataset
+    if not raw and input_mode != 'marker_rgb':
+        raise ValueError('Non-marker_rgb tactile modes require raw_dataset: true')
+    extra = {'input_mode': input_mode} if raw else {}
+    train_dataset = dataset_class(train_indices, dataset_dir, camera_names, tactile_names, norm_stats, chunk_size, **extra)
+    val_dataset = dataset_class(val_indices, dataset_dir, camera_names, tactile_names, norm_stats, chunk_size, **extra)
 
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=batch_size_train,
         shuffle=True,
         pin_memory=True,
-        num_workers=6,
-        persistent_workers=True, worker_init_fn=worker_init_fn
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0, worker_init_fn=worker_init_fn
     )
     val_dataloader = DataLoader(
         val_dataset,
         batch_size=batch_size_val,
         shuffle=True,
         pin_memory=True,
-        num_workers=6,
-        persistent_workers=True, worker_init_fn=worker_init_fn
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0, worker_init_fn=worker_init_fn
     )
 
     return train_dataloader, val_dataloader, norm_stats, True

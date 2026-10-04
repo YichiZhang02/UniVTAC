@@ -79,7 +79,7 @@ def _require_zarr() -> tuple[Any, Any]:
         import zarr
     except ImportError as exc:
         raise SystemExit(
-            "缺少转换依赖 zarr/numcodecs。请先运行：bash data/download.sh setup"
+            "缺少转换依赖 zarr/numcodecs。请先运行：python -m pip install zarr numcodecs"
         ) from exc
     major = int(zarr.__version__.split(".", 1)[0])
     if major >= 3:

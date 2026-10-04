@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Literal
 from omegaconf import OmegaConf
 
-from envs.utils.env_parser import add_config_override_argument, load_task_config
+from resources.envs.utils.env_parser import add_config_override_argument, load_task_config
 
 
 parser = argparse.ArgumentParser(
@@ -295,7 +295,7 @@ def main():
     if deploy_config["instuction_file"] is not None:
         instructions, _ = get_config(
             deploy_config["instuction_file"],
-            default_root=Path(__file__).parent.parent / "instructions",
+            default_root=Path(__file__).parent.parent / "resources" / "instructions",
             type="json",
         )
     else:

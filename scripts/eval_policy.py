@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Literal
 from omegaconf import OmegaConf
 
-from envs.utils.env_parser import (
+from resources.envs.utils.env_parser import (
     add_config_override_argument,
     create_task_env,
     load_task_config,
@@ -86,7 +86,7 @@ import traceback
 import importlib
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from envs._base_task import BaseTask
+    from resources.envs._base_task import BaseTask
     from policy._base_policy import BasePolicy
 
 log_path = Path('./log')
@@ -221,7 +221,7 @@ def main():
     deploy_config['instuction_file'] = deploy_config.get('instuction_file', task_file_name)
     if deploy_config['instuction_file'] is not None:
         instructions, _ = get_config(
-            deploy_config['instuction_file'], default_root=Path(__file__).parent.parent / 'instructions', type='json'
+            deploy_config['instuction_file'], default_root=Path(__file__).parent.parent / 'resources' / 'instructions', type='json'
         )
     else:
         instructions = {'seen': ['Empty'], 'unseen': ['Empty']}

@@ -9,10 +9,10 @@ from tqdm import tqdm
 from pathlib import Path
 
 PROJECT_ROOT_PATH = (Path(__file__).parent / '..').resolve()
-DATA_ROOT_PATH = PROJECT_ROOT_PATH / 'data'
+DATA_ROOT_PATH = PROJECT_ROOT_PATH / 'resources' / 'data'
 sys.path.append(str(PROJECT_ROOT_PATH.absolute()))
 
-from envs.utils.data import HDF5Handler
+from resources.envs.utils.data import HDF5Handler
 
 class BaseDataPreprocessor:
     def __init__(self, task_name:str, collect_config_name:str):

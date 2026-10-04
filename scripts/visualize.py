@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 import sys
 sys.path.append('.')
-from envs.utils.data import HDF5Handler
+from resources.envs.utils.data import HDF5Handler
 
 def to_cpu(data):
     if isinstance(data, dict):
@@ -208,7 +208,7 @@ def print_frame(data_root, seed, frame=-1):
 
 def main(task, name, config, seed, is_cache):
     global data_length
-    data_root = f'./data/{name}/{config}'
+    data_root = f'./resources/data/{name}/{config}'
     if task == 'video':
         if is_cache:
             data_list = read_from_cache(data_root, seed)

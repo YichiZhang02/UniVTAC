@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from multiprocessing import Process, Queue, Manager, Event, current_process
 
-from envs.utils.env_parser import (
+from resources.envs.utils.env_parser import (
     add_config_override_argument,
     collection_data_dir,
     create_task_env,
@@ -23,7 +23,7 @@ from envs.utils.env_parser import (
 )
 
 if TYPE_CHECKING:
-    from envs._base_task import BaseTask
+    from resources.envs._base_task import BaseTask
 
 
 def split_devices(cuda_visible_devices: str, workers: int):

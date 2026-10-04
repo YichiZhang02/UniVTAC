@@ -235,7 +235,7 @@ class SmolVLAVisionDataPreprocessor(BaseDataPreprocessor):
 
     def _sample_instruction(self) -> str:
         for path in (
-            POLICY_ROOT / "instructions" / f"{self.task_name}.json",
+            POLICY_ROOT.parent / "resources" / "instructions" / f"{self.task_name}.json",
             self.raw_root_path.parent / "instructions.json",
         ):
             if path.exists():

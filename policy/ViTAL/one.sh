@@ -36,4 +36,4 @@ fi
 
 # 执行评估部分
 cd ../../
-bash eval_policy.sh $task_name $task_config ViTAL/deploy $gpu_id
+bash test_policy.sh $task_name $task_config ViTAL/deploy $gpu_id

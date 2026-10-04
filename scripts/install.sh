@@ -7,9 +7,9 @@ CUDA_ARCH_INPUT="${UNIVTAC_CUDA_ARCH:-89}"
 BUILD_JOBS="${UNIVTAC_BUILD_JOBS:-8}"
 VCPKG_ROOT="${UNIVTAC_VCPKG_ROOT:-${PROJECT_ROOT}/.cache/toolchains/vcpkg}"
 VCPKG_COMMIT="dd3097e305afa53f7b4312371f62058d2e665320"
-CUROBO_DIR="${PROJECT_ROOT}/third_party/curobo"
+CUROBO_DIR="${PROJECT_ROOT}/resources/third_party/curobo"
 CUROBO_COMMIT="ebb71702f3f70e767f40fd8e050674af0288abe8"
-UIPC_DIR="${PROJECT_ROOT}/third_party/TacEx/source/tacex_uipc"
+UIPC_DIR="${PROJECT_ROOT}/resources/third_party/TacEx/source/tacex_uipc"
 CHECK_ONLY=0
 
 usage() {
@@ -119,7 +119,7 @@ if [[ ! -x "${CUDA_ROOT}/bin/nvcc" ]]; then
     echo "Run the TacEx Conda environment update or set UNIVTAC_CUDA_HOME." >&2
     exit 1
 fi
-if ! "${CUDA_ROOT}/bin/nvcc" --version | tail -n 1 | grep -q "release 12\.6"; then
+if [[ "$("${CUDA_ROOT}/bin/nvcc" --version)" != *"release 12.6"* ]]; then
     echo "UniVTAC must use CUDA 12.6; ${CUDA_ROOT} is a different toolkit." >&2
     exit 1
 fi
@@ -231,8 +231,8 @@ echo "[2/7] Installing Isaac Sim 5.1 and Isaac Lab 2.3.0."
 
 echo "[3/7] Installing the vendored TacEx core and assets."
 "${PIP[@]}" install --no-build-isolation \
-    -e "${PROJECT_ROOT}/third_party/TacEx/source/tacex" \
-    -e "${PROJECT_ROOT}/third_party/TacEx/source/tacex_assets"
+    -e "${PROJECT_ROOT}/resources/third_party/TacEx/source/tacex" \
+    -e "${PROJECT_ROOT}/resources/third_party/TacEx/source/tacex_assets"
 "${PIP[@]}" install pybind11 mypy transforms3d tetgen "polyscope>=2.5,<3"
 
 echo "[4/7] Preparing the pinned vcpkg toolchain."

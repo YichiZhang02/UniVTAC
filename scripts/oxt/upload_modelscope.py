@@ -41,7 +41,7 @@ def main() -> int:
     try:
         from modelscope.hub.api import HubApi
     except ImportError as exc:
-        raise SystemExit("缺少 modelscope。请先运行：bash data/download.sh setup") from exc
+        raise SystemExit("缺少 modelscope。请先运行：python -m pip install modelscope") from exc
 
     api = HubApi()
     repo_url = api.create_repo(

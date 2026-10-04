@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from omegaconf import OmegaConf
 
-from envs.utils.env_parser import (
+from resources.envs.utils.env_parser import (
     add_config_override_argument,
     create_task_env,
     load_task_config,
@@ -80,7 +80,7 @@ app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
 if TYPE_CHECKING:
-    from envs._base_task import BaseTask
+    from resources.envs._base_task import BaseTask
 
 log_path = Path('./log')
 def log(msg):

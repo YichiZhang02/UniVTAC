@@ -30,7 +30,7 @@ class ACTPolicy(nn.Module):
         self.kl_weight = args_override["kl_weight"]
         print(f"KL Weight {self.kl_weight}")
 
-    def __call__(self, qpos, cam_image, tac_image, actions=None, is_pad=None):
+    def forward(self, qpos, cam_image, tac_image, actions=None, is_pad=None):
         env_state = None
         if actions is not None:  # training time
             actions = actions[:, :self.model.num_queries]

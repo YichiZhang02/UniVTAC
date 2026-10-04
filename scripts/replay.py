@@ -14,7 +14,7 @@ import h5py
 from pathlib import Path
 from omegaconf import OmegaConf
 
-from envs.utils.env_parser import (
+from resources.envs.utils.env_parser import (
     FIXED_POST_REPLAY_DELAY_STEPS,
     add_config_override_argument,
     collection_data_dir,
@@ -80,9 +80,9 @@ app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
 from typing import TYPE_CHECKING
-from envs.utils.data import HDF5Handler
+from resources.envs.utils.data import HDF5Handler
 if TYPE_CHECKING:
-    from envs._base_task import BaseTask
+    from resources.envs._base_task import BaseTask
 
 log_path = Path('./log')
 def log(msg):

@@ -32,7 +32,7 @@ from uipc import builtin, view
 import omni.usd
 
 import tacex_uipc  # noqa: F401 - fail loudly instead of optional-import masking
-from envs.grasp_classify import Task, TaskCfg
+from resources.envs.grasp_classify import Task, TaskCfg
 
 
 def _rigid_velocity(actor) -> np.ndarray:

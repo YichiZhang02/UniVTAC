@@ -1,0 +1,56 @@
+S:
+  samples: 100000
+  epochs: 30
+  batch_size: 64
+  workers: 6
+  optimizer: AdamW
+  precision: bf16
+  lr: 0.0001
+  weight_decay: 0.05
+  warmup_epochs: 1
+  min_lr_ratio: 0.1
+  grad_clip: 1.0
+  teacher_momentum: 0.996
+  val_fraction: 0.2
+  early_stop_patience: 5
+  checkpoint_metric: knn
+  probe_per_class_train: 128
+  probe_per_class_val: 128
+  multi_gpu: false
+  model:
+    block_size: 6
+    num_blocks: 2
+    variance_weight: 0.5
+    min_feature_std: 0.05
+    variance_scope: context
+    sigreg_weight: 1.0e-06
+    sigreg_dim: 128
+    sigreg_projections: 256
+B:
+  samples: 100000
+  epochs: 30
+  batch_size: 64
+  workers: 6
+  optimizer: AdamW
+  precision: bf16
+  lr: 0.0001
+  weight_decay: 0.05
+  warmup_epochs: 1
+  min_lr_ratio: 0.1
+  grad_clip: 1.0
+  teacher_momentum: 0.996
+  val_fraction: 0.2
+  early_stop_patience: 5
+  checkpoint_metric: knn
+  probe_per_class_train: 128
+  probe_per_class_val: 128
+  multi_gpu: false
+  model:
+    block_size: 6
+    num_blocks: 2
+    variance_weight: 0.5
+    min_feature_std: 0.05
+    variance_scope: context
+    sigreg_weight: 1.0e-06
+    sigreg_dim: 128
+    sigreg_projections: 256

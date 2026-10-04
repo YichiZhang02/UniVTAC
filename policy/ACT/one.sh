@@ -43,5 +43,5 @@ GPU         : $gpu_id
 cd ../../
 export TRAIN_CONFIG=$train_config
 export EP_NUM=$expert_data_num
-# bash parallel_eval.sh $task_name $task_config ACT/deploy $gpu_id
-bash eval_policy.sh $task_name $task_config ACT/deploy $gpu_id
+# bash scripts/parallel_eval.sh $task_name $task_config ACT/deploy $gpu_id
+bash test_policy.sh $task_name $task_config ACT/deploy $gpu_id

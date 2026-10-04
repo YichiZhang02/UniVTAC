@@ -12,7 +12,7 @@ import numpy as np
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from envs.utils import data
+from resources.envs.utils import data
 
 def replace_submodules(
         root_module: nn.Module,

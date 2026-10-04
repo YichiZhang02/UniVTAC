@@ -17,14 +17,14 @@ from pathlib import Path
 from typing import Literal, TYPE_CHECKING
 from multiprocessing import Process, Queue, Manager, Event, current_process
 
-from envs.utils.env_parser import (
+from resources.envs.utils.env_parser import (
     add_config_override_argument,
     create_task_env,
     load_task_config,
 )
 
 if TYPE_CHECKING:
-    from envs._base_task import BaseTask
+    from resources.envs._base_task import BaseTask
     from policy._base_policy import BasePolicy
 
 
@@ -241,7 +241,7 @@ def main():
     deploy_config['instruction_file'] = deploy_config.get('instruction_file', args.task_name)
     try:
         instructions, _ = get_config(
-            deploy_config['instruction_file'], default_root=Path(__file__).parent.parent / 'instructions', type='json'
+            deploy_config['instruction_file'], default_root=Path(__file__).parent.parent / 'resources' / 'instructions', type='json'
         )
         # Fallback if instructions missing keys
         if not isinstance(instructions, dict) or 'seen' not in instructions or 'unseen' not in instructions:

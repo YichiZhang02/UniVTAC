@@ -1,7 +1,7 @@
 import torch
 import typing
 if typing.TYPE_CHECKING:
-    from envs._base_task import BaseTask, BaseTaskCfg
+    from resources.envs._base_task import BaseTask, BaseTaskCfg
 
 class BasePolicy:
     def __init__(self, args):

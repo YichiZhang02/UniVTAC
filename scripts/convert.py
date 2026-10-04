@@ -47,8 +47,8 @@ from isaaclab.app import AppLauncher
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Utility to convert a mesh file into USD format.")
-parser.add_argument("--input", "-i", type=str, help="The path to the input mesh file.", default='assets/objects/ipt')
-parser.add_argument("--output", "-o", type=str, help="The path to store the USD file.", default='assets/objects/opt')
+parser.add_argument("--input", "-i", type=str, help="The path to the input mesh file.", default='resources/assets/objects/ipt')
+parser.add_argument("--output", "-o", type=str, help="The path to store the USD file.", default='resources/assets/objects/opt')
 parser.add_argument(
     "--make-instanceable",
     action="store_true",
@@ -515,7 +515,7 @@ def main():
         print(f"[{idx + 1}/{total_files}] Converted USD file saved at: {usd_path}")
 
 def visualize(name):
-    usd_path = Path(f'assets/objects/{name}.usd')
+    usd_path = Path(f'resources/assets/objects/{name}.usd')
     stage = Usd.Stage.Open(str(usd_path))
     prim = stage.GetPrimAtPath(f'/{name}/mesh')
     tet_points = prim.GetAttribute('tet_points').Get()
