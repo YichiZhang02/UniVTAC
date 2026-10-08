@@ -4,7 +4,7 @@ StarVLA-GR00T 的模型实现位于 `policy/starvla_groot/`，由 Qwen 视觉语
 
 ## 环境与模型
 
-环境安装遵循根目录 [README_yichi.md](../../README_yichi.md) 的 A100/A800 训练 Quick Start，统一使用 `requirements_train.txt`。统一训练入口默认读取 `resources/pretrained_models/Qwen3.5-2B/`。5090 模拟器测试环境仍待验证。
+环境安装遵循根目录 [README_yichi.md](../../README_yichi.md) 的 A100/A800 训练 Quick Start，统一使用 `requirements_train.txt`。统一训练入口默认读取 `resources/pretrained_models/Qwen3.5-2B/`。5090 模拟器测试环境和单回合 StarVLA 推理结果见 [README_5090.md](../../README_5090.md)。
 
 ## 训练与测试
 

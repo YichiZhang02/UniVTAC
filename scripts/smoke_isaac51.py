@@ -53,7 +53,7 @@ def main() -> None:
 
     task = None
     try:
-        task = Task(cfg, mode="eval_test")
+        task = Task(cfg, mode="eval")
         assert task.num_envs == 1
         assert len(task._tactile_manager.tactiles) == 2
 

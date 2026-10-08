@@ -53,7 +53,10 @@ def make_vla_config(run, device, models_root):
     common["chunk_size"] = saved.get("chunk_size", saved["base"].get("chunk_size", options["chunk_size"]))
     if run["policy"] == "starvla_groot":
         from policy.starvla_groot.configuration_starvla_groot import StarvlaGrootConfig
-        common.update(base_vlm=str(models_root / "Qwen3.5-2B"), action_dim=8, state_dim=8)
+        qwen_path = saved.get("inference", {}).get("qwen_path")
+        bundled_qwen = (run["directory"] / qwen_path).resolve() if qwen_path else None
+        base_vlm = bundled_qwen if bundled_qwen and bundled_qwen.is_dir() else models_root / "Qwen3.5-2B"
+        common.update(base_vlm=str(base_vlm), action_dim=8, state_dim=8)
         return StarvlaGrootConfig(**common)
     from policy.pi05.configuration_pi05 import PI05Config
     common["paligemma_tokenizer_path"] = str(models_root / "pi05_base" / "paligemma-3b-pt-224-tokenizer")

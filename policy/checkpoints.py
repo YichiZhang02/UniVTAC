@@ -96,9 +96,23 @@ def load_run(path, step=None):
         episodes = json.loads(episodes_path.read_text())
         tasks = list(episodes.get("train", {}))
     elif not tasks:
-        tasks = [options.get("task", "lift_can")]
+        requested = options.get("tasks", "")
+        if options.get("training_mode") == "multi_task":
+            if isinstance(requested, str):
+                tasks = [name.strip() for name in requested.split(",") if name.strip()]
+            else:
+                tasks = list(requested)
+            if not tasks:
+                # Older VLA exports omitted both the selected task list and
+                # episodes.json. The simulator's instruction files enumerate
+                # the eight supported tasks; task_settings also contains
+                # training-only entries without simulator environments.
+                instruction_dir = ROOT / "resources" / "instructions"
+                tasks = sorted(path.stem for path in instruction_dir.glob("*.json")
+                               if (ROOT / "resources" / "envs" / f"{path.stem}.py").is_file())
+        else:
+            tasks = [options.get("task", "lift_can")]
     match = STEP_PATTERN.fullmatch(checkpoint.name)
     return {"checkpoint": checkpoint, "directory": folder, "config": config, "stats": stats,
             "options": options, "policy": policy, "camera_keys": camera_keys, "tasks": tasks,
             "step": int(match.group(1)) if match else None, "label": run_label(config)}
-

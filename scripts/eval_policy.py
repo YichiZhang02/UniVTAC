@@ -64,13 +64,17 @@ parser.add_argument(
     "--print_only",
     action='store_true',
 )
+parser.add_argument("--save-dir", type=Path, help="Directory for this task's simulator outputs")
+parser.add_argument("--result-json", type=Path, help="Write machine-readable evaluation totals")
+parser.add_argument("--max-errors", type=int, default=-1,
+                    help="Stop after this many evaluation exceptions; -1 preserves unlimited retries")
 add_config_override_argument(parser)
 AppLauncher.add_app_launcher_args(parser)
 
 # parse the arguments
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
-args_cli.livestream = 2
+args_cli.livestream = 0 if args_cli.headless else 2
 args_cli.num_envs = 1
 
 task_config, task_config_file = load_task_config(
@@ -101,9 +105,10 @@ def log(msg):
 
 def eval_policy(
     task: 'BaseTask', policy: 'BasePolicy', expert_check,
-    start_seed, max_seed, test_total_num, instructions, instruciton_type:Literal['seen', 'unseen']='seen'
+    start_seed, max_seed, test_total_num, instructions, instruciton_type:Literal['seen', 'unseen']='seen',
+    max_errors=-1,
 ):
-    test_num, succ_num, seed = 0, 0, start_seed
+    test_num, succ_num, error_num, seed = 0, 0, 0, start_seed
 
     seed_path = task.save_root.parent / 'seeds.json'
     seed_path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,7 +118,8 @@ def eval_policy(
     else:
         seed_status = {}
  
-    while test_num < test_total_num and (max_seed == -1 or seed <= max_seed):
+    while (test_num < test_total_num and (max_seed == -1 or seed <= max_seed)
+           and (max_errors == -1 or error_num < max_errors)):
         if not seed_status.get(str(seed), True):
             seed += 1
             continue
@@ -164,6 +170,7 @@ def eval_policy(
             succ_status = 'error'
             task.clean_cache(result=succ_status)
             test_num -= 1
+            error_num += 1
         else:
             eval_cost = time.perf_counter() - eval_start
             
@@ -180,7 +187,9 @@ def eval_policy(
     
     return {
         'test_num': test_num,
-        'succ_num': succ_num
+        'succ_num': succ_num,
+        'error_num': error_num,
+        'next_seed': seed,
     }
 
 def get_config(file, default_root:Path, type:Literal['yaml', 'json']):
@@ -230,7 +239,7 @@ def main():
     
     curr_time = time.strftime(r'%Y-%m-%d_%H:%M:%S')
 
-    save_dir = (
+    save_dir = args_cli.save_dir or (
         Path(str(task_config.replay_settings.save_root_dir))
         / policy_name
         / task_file_name
@@ -271,9 +280,14 @@ def main():
         max_seed=args_cli.max_seed,
         test_total_num=args_cli.total_num,
         instructions=instructions,
-        instruciton_type=deploy_config.get("instruction_type", "seen")
+        instruciton_type=deploy_config.get("instruction_type", "seen"),
+        max_errors=args_cli.max_errors,
     )
-    log(f"Final Result: {results['succ_num']}/{results['test_num']}({results['succ_num']/results['test_num']*100:.2f}%) success.")
+    rate = results['succ_num'] / results['test_num'] * 100 if results['test_num'] else 0.0
+    log(f"Final Result: {results['succ_num']}/{results['test_num']}({rate:.2f}%) success.")
+    if args_cli.result_json is not None:
+        args_cli.result_json.parent.mkdir(parents=True, exist_ok=True)
+        args_cli.result_json.write_text(json.dumps(results, indent=2) + "\n")
     
     task.close()
     policy.close()

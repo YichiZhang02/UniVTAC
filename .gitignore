@@ -44,6 +44,8 @@
 !/policy_results/.gitkeep
 /policy_logs/
 /eval_result/
+/test_results/*
+!/test_results/.gitkeep
 /dry_eval_result/
 /archive/encoder_ablation/
 /archive/encoder_logs/

@@ -19,7 +19,7 @@ fi
 
 POLICY="${POLICY:-starvla_groot}"                    # act | pi05 | starvla_groot
 TRAINING_MODE="${TRAINING_MODE:-single_task}" # single_task | multi_task
-TASK="${TASK:-lift_can}"                   # single_task only
+TASK="${TASK:-}"                   # single_task only
 TASKS="${TASKS:-}"                         # multi_task comma-separated; empty = all
 EPISODES="${EPISODES:-100}"                 # per task; 0 = all
 CAMERAS="${CAMERAS:-auto}"                  # auto | head | all

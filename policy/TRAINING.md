@@ -59,13 +59,35 @@ bash test_policy.sh --checkpoint "$RUN_DIR" --step 10000 --task lift_can --offli
 # Simulator evaluation; the 5090 environment remains to be validated.
 bash test_policy.sh --checkpoint "$RUN_DIR" --task lift_can --task-config demo --gpu 0 --headless
 
-# Original baseline deploy configs are still accepted by the public testing entry point.
-bash test_policy.sh lift_can demo ACT/deploy 0
+# Legacy positional baseline deploy configs use the Python entry point directly.
+python scripts/test_policy.py lift_can demo ACT/deploy 0
 ```
+
+### Parallel multi-task simulator evaluation
+
+The first four positional arguments to `test_policy.sh` are model ID, step, GPU IDs, and GPU count. Each uses the default shown in the script when omitted (`${1:-...}` and so on), so `bash test_policy.sh` launches the default run. The other batch defaults (episode count, seeds, and reset timeout) are at the top of the script. A local `../miniconda3/envs/univtac/bin/python` is selected automatically when present. `bash test_policy.sh --dry-run` prints the default plan without starting Isaac Sim.
+
+Pass the directory name under `policy_results/` and a checkpoint step. List only GPUs available for this evaluation in the third argument; the fourth argument uses the first N listed GPUs, with one task process per GPU. As a task finishes, its GPU runs the next pending task. The default task list comes from `episodes.json` when present. For older `multi_task` exports without that file, it is the eight simulator tasks with instruction files.
+
+```bash
+bash test_policy.sh
+
+# If GPUs 1, 4 and 6 are occupied, use the remaining GPUs with three workers.
+bash test_policy.sh \
+  20261001-165913-264380040_starvla_groot_multi_task_all_encode_marker_rgb_DINOv2_S_cls_encoder \
+  30000 0,2,5 3
+
+# Inspect selected tasks and settings without launching the simulator.
+bash test_policy.sh --dry-run
+```
+
+Batch defaults from `test_policy.sh` are `demo` task config, 20 valid episodes per task, start seed `-1` (resolved to `1000000` for checkpoint seed 0), no maximum seed, and `seen` instructions. Batch execution is headless with livestream disabled and a 600-second reset limit. It stops a task after 10 evaluation exceptions to avoid endless retries; `--max-errors` changes this cap. `--total-num`, `--start-seed`, `--max-seed`, `--tasks`, and simulator `--config-overrides` are available.
+
+Outputs are in `test_results/<model_id>_step<step>/`: `logs/<task>.log`, `videos/<task>/video/<seed>.mp4`, `results/<task>.json`, `settings.json`, `summary.json`, and `summary.md`. The average in the summary is the arithmetic mean of the selected task success rates. It is shown only when every selected task reaches the requested number of valid episodes. An existing output directory is renamed to a sibling ending in `_previous_<timestamp>` before a new run, preserving interrupted results without mixing them.
 
 `--checkpoint` accepts a physical run directory or a particular `checkpoint_<step>.pt` file; directories select the greatest available step. `CHECKPOINT=...` can be used instead of the flag. Keep `train_config.yml`, `dataset_stats.json`, and `episodes.json` beside the weights when transferring a run. `--models-root` overrides the local `resources/pretrained_models/` directory. The unified loader restores model architecture, camera routing, tactile representation, state normalization, and action denormalization from the saved training metadata. VLA tactile backbones are reconstructed from saved architecture metadata and restored from the policy state, so they do not depend on the original server's absolute encoder path. Language conditioning uses the same task-name labels used in training.
 
-`--inspect` is a metadata check; `--offline` checks checkpoint loading and action inference. Neither reports simulator task success. Full simulator evaluation on the 5090 server remains unverified. `scripts/eval_policy.sh` is a compatibility wrapper that forwards to `test_policy.sh`; `scripts/parallel_eval.sh` retains parallel evaluation with an explicit deploy configuration.
+`--inspect` is a metadata check; `--offline` checks checkpoint loading and action inference. Neither reports simulator task success. A 5090 smoke evaluation of the 30,000-step StarVLA-GR00T `lift_can` checkpoint completed one simulator episode (seed 0, 0/1 success); see [README_5090.md](../README_5090.md). `scripts/eval_policy.sh` is a compatibility wrapper that forwards to `test_policy.sh`; `scripts/parallel_eval.sh` retains parallel evaluation with an explicit deploy configuration. The shell script's positional arguments now select a batch model, so legacy positional task/deploy arguments must go to `scripts/test_policy.py`.
 
 ## Distributed training and the 32-GPU experiment grid
 

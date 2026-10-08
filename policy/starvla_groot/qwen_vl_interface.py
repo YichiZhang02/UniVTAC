@@ -63,7 +63,9 @@ class QwenVLInterface(nn.Module):
     ):
         super().__init__()
 
-        from transformers import AutoModelForImageTextToText, AutoProcessor
+        from pathlib import Path
+
+        from transformers import AutoConfig, AutoModelForImageTextToText, AutoProcessor
 
         # Fall back to sdpa if flash_attention_2 is requested but unavailable.
         if attn_implementation == "flash_attention_2":
@@ -73,12 +75,22 @@ class QwenVLInterface(nn.Module):
                 logger.warning("flash_attn not installed, falling back to sdpa")
                 attn_implementation = "sdpa"
 
-        model = AutoModelForImageTextToText.from_pretrained(
-            base_vlm,
-            attn_implementation=attn_implementation,
-            dtype=dtype,
-            ignore_mismatched_sizes=True,
-        )
+        model_dir = Path(base_vlm)
+        weight_files = list(model_dir.glob("*.safetensors")) + list(model_dir.glob("*.bin"))
+        config_only = model_dir.is_dir() and not weight_files
+        if config_only:
+            # Portable inference bundles carry Qwen's config/processor here; the full
+            # model weights are restored from the unified policy checkpoint.
+            model = AutoModelForImageTextToText.from_config(
+                AutoConfig.from_pretrained(base_vlm), attn_implementation=attn_implementation, dtype=dtype
+            )
+        else:
+            model = AutoModelForImageTextToText.from_pretrained(
+                base_vlm,
+                attn_implementation=attn_implementation,
+                dtype=dtype,
+                ignore_mismatched_sizes=True,
+            )
         processor = AutoProcessor.from_pretrained(base_vlm)
         processor.tokenizer.padding_side = "left"
 
