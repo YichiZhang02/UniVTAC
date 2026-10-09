@@ -86,7 +86,7 @@ def run_batch(args, simulator_args, parser):
     tasks = [item.strip() for item in args.tasks.split(",") if item.strip()] if args.tasks else list(run["tasks"])
     if not tasks or len(tasks) != len(set(tasks)) or any(task not in run["tasks"] for task in tasks):
         parser.error(f"--tasks must contain unique tasks from {run['tasks']}")
-    result_dir = ROOT / "test_results" / f"{args.model_id}_step{args.step}"
+    result_dir = ROOT / "test_results" / args.model_id / str(args.step)
     summary = {"model_id": args.model_id, "step": args.step, "checkpoint": str(run["checkpoint"]),
                "task_config": args.task_config, "tasks": tasks, "gpu_ids": gpu_ids,
                "total_num_per_task": args.total_num, "start_seed": args.start_seed,

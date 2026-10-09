@@ -88,3 +88,5 @@
 !/resources/third_party/TacEx/source/tacex_assets/tacex_assets/data/Sensors/GelSight_Mini/**/*.pth
 !/resources/third_party/TacEx/source/tacex_assets/tacex_assets/data/Sensors/GelSight_Mini/**/*.npy
 !/resources/third_party/TacEx/source/tacex_assets/tacex_assets/data/Sensors/GelSight_Mini/**/*.npz
+
+1.sh

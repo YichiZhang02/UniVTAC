@@ -106,7 +106,7 @@ bash test_policy.sh \
 
 当前脚本使用 `demo` 任务配置、`seen` 指令，每个 task 目标为 **20 个有效回合**；起始 seed 为 `1000000`，之后递增，不设置最大 seed。每个 task 遇到 10 次评测异常会停止，reset 超时设为 600 秒。批量评测使用 headless 模式并关闭 livestream。需要调整这些参数时，修改 [test_policy.sh](test_policy.sh) 顶部的设置。
 
-结果保存在 `test_results/<MODEL_ID>_step<STEP>/`：`logs/` 是各 task 的控制台日志，`videos/<task>/video/` 是回合视频，`results/` 是逐 task 统计，`summary.md` 和 `summary.json` 汇总成功率及各 task 成功率的算术平均值。若有 task 未完成目标回合数，平均值显示为 N/A。重测同一个模型和 step 时，脚本会把旧结果目录改名为 `_previous_<时间>` 后再启动，保留中断运行的日志和视频。
+结果保存在 `test_results/<MODEL_ID>/<STEP>/`：`logs/` 是各 task 的控制台日志，`videos/<task>/video/` 是回合视频，`results/` 是逐 task 统计，`summary.md` 和 `summary.json` 汇总成功率及各 task 成功率的算术平均值。若有 task 未完成目标回合数，平均值显示为 N/A。重测同一个模型和 step 时，脚本会把旧结果目录改名为 `_previous_<时间>` 后再启动，保留中断运行的日志和视频。
 
 更多测试选项见 [policy/TRAINING.md](policy/TRAINING.md)。
 
