@@ -62,10 +62,16 @@ class StarvlaGrootPolicy(PreTrainedPolicy):
         self.action_dim = action_dim
         self.state_dim = state_dim
 
+        # DDP initially reduces buckets in reverse registration order. Reserve
+        # this slot so tactile gradients cannot block the earlier action/VLM
+        # gradients, while keeping construction and RNG consumption unchanged.
+        self.add_module("tactile_encoder", None)
+
         # VLM prefix encoder.
         load_dtype = torch.bfloat16 if config.dtype == "bfloat16" else torch.float32
         self.qwen_vl = QwenVLInterface(
             base_vlm=config.base_vlm,
+            from_config=config.vlm_from_config,
             attn_implementation=config.attn_implementation,
             dtype=load_dtype,
             image_resolution=config.image_resolution,
@@ -99,7 +105,6 @@ class StarvlaGrootPolicy(PreTrainedPolicy):
         #     all LLM layers (deep fusion with image/language tokens), or
         #   - "decoder": appended to the VLM output hidden states as an extra condition
         #     the GR00T action head cross-attends to.
-        self.tactile_encoder = None
         if config.tactile_mode == "encode":
             self.tactile_encoder = TactileEncoder(config, self.qwen_vl.hidden_size)
             if config.tactile_insert_location == "encoder" and not self.qwen_vl.supports_prefix_injection():
@@ -210,7 +215,9 @@ class StarvlaGrootPolicy(PreTrainedPolicy):
         tactile_tokens = None
         if self.tactile_encoder is not None:
             # forward_flat folds any tactile time axis into the token dim -> [B, F*n_keys*N, H].
-            tactile_tokens = self.tactile_encoder.forward_flat(batch)  # [B, n_tac, H]
+            # Autocast tactile computation while preserving parameter/optimizer dtypes.
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                tactile_tokens = self.tactile_encoder.forward_flat(batch)  # [B, n_tac, H]
 
         # Encoder side: inject tactile tokens into the Qwen-VL *input* embeddings so they
         # flow through every LLM layer alongside image/language tokens (deep fusion).
@@ -315,8 +322,19 @@ class StarvlaGrootPolicy(PreTrainedPolicy):
     def reset(self):
         self._action_queue = deque(maxlen=self.config.n_action_steps)
 
-    def get_optim_params(self) -> dict:
-        return self.parameters()
+    def get_optim_params(self):
+        """Preserve the original optimizer order independently of DDP buckets.
+
+        AdamW checkpoints associate state with parameter positions. Keep the
+        legacy Qwen/action/tactile order for updates and gradient clipping.
+        """
+        seen = set()
+        for module in (self.qwen_vl, self.action_head, self.tactile_encoder):
+            if module is not None:
+                for parameter in module.parameters():
+                    if parameter not in seen:
+                        seen.add(parameter)
+                        yield parameter
 
     def _get_default_peft_targets(self) -> dict:
         # Train the action head fully and adapt the VLM attention projections.

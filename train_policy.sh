@@ -18,25 +18,25 @@ if [[ ! "$NUM_PROCESSES" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 POLICY="${POLICY:-starvla_groot}"                    # act | pi05 | starvla_groot
-TRAINING_MODE="${TRAINING_MODE:-single_task}" # single_task | multi_task
+TRAINING_MODE="${TRAINING_MODE:-multi_task}" # single_task | multi_task
 TASK="${TASK:-}"                   # single_task only
 TASKS="${TASKS:-}"                         # multi_task comma-separated; empty = all
-EPISODES="${EPISODES:-100}"                 # per task; 0 = all
-CAMERAS="${CAMERAS:-auto}"                  # auto | head | all
+EPISODES="${EPISODES:-0}"                 # per task; 0 = all
+CAMERAS="${CAMERAS:-all}"                  # auto | head | all
 
 TACTILE_MODE="${TACTILE_MODE:-encode}"     # none | as_image | encode
 TACTILE_INPUT_MODE="${TACTILE_INPUT_MODE:-${INPUT_MODE:-marker_rgb}}" # marker_only | rgb_only | marker_rgb | depth_deform
-TACTILE_TYPE="${TACTILE_TYPE:-cls}"        # cls | full (encode only)
-TACTILE_INSERT_LOCATION="${TACTILE_INSERT_LOCATION:-decoder}"
-ENCODER_METHOD="${ENCODER_METHOD:-ResNet}"
+TACTILE_TYPE="${TACTILE_TYPE:-full}"        # cls | full (encode only)
+TACTILE_INSERT_LOCATION="${TACTILE_INSERT_LOCATION:-encoder}"
+ENCODER_METHOD="${ENCODER_METHOD:-VAE}"
 ENCODER_SIZE="${ENCODER_SIZE:-S}"
 ENCODER_CKPT="${ENCODER_CKPT:-}"
 
-STEPS="${STEPS:-}"
-BATCH_SIZE="${BATCH_SIZE:-}"
-CHUNK_SIZE="${CHUNK_SIZE:-}"
+STEPS="${STEPS:-100_0000}"
+BATCH_SIZE="${BATCH_SIZE:-64}"
+CHUNK_SIZE="${CHUNK_SIZE:-32}"
 WORKERS="${WORKERS:-4}"
-SAVE_FREQ="${SAVE_FREQ:-5000}"
+SAVE_FREQ="${SAVE_FREQ:-10_000}"
 SAVE_CHECKPOINT="${SAVE_CHECKPOINT:-true}"
 LOG_FREQ="${LOG_FREQ:-100}"
 MAX_VAL_BATCHES="${MAX_VAL_BATCHES:-4}"

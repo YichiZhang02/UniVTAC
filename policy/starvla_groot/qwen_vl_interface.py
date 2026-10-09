@@ -60,6 +60,7 @@ class QwenVLInterface(nn.Module):
         attn_implementation: str = "sdpa",
         dtype: torch.dtype = torch.bfloat16,
         image_resolution: tuple[int, int] = (224, 224),
+        from_config: bool = False,
     ):
         super().__init__()
 
@@ -77,21 +78,24 @@ class QwenVLInterface(nn.Module):
 
         model_dir = Path(base_vlm)
         weight_files = list(model_dir.glob("*.safetensors")) + list(model_dir.glob("*.bin"))
-        config_only = model_dir.is_dir() and not weight_files
-        if config_only:
-            # Portable inference bundles carry Qwen's config/processor here; the full
-            # model weights are restored from the unified policy checkpoint.
-            model = AutoModelForImageTextToText.from_config(
-                AutoConfig.from_pretrained(base_vlm), attn_implementation=attn_implementation, dtype=dtype
-            )
+        from_config = from_config or (model_dir.is_dir() and not weight_files)
+        if from_config:
+            from transformers.initialization import no_init_weights
+
+            model_config = AutoConfig.from_pretrained(base_vlm, local_files_only=True)
+            # The complete policy state is loaded strictly before inference. Avoid
+            # spending time randomly initializing billions of overwritten weights.
+            # Rotary buffers are constructed from config by the Qwen modules.
+            with no_init_weights():
+                model = AutoModelForImageTextToText.from_config(
+                    model_config, attn_implementation=attn_implementation, dtype=dtype,
+                )
         else:
             model = AutoModelForImageTextToText.from_pretrained(
-                base_vlm,
-                attn_implementation=attn_implementation,
-                dtype=dtype,
-                ignore_mismatched_sizes=True,
+                base_vlm, attn_implementation=attn_implementation,
+                dtype=dtype, ignore_mismatched_sizes=True,
             )
-        processor = AutoProcessor.from_pretrained(base_vlm)
+        processor = AutoProcessor.from_pretrained(base_vlm, local_files_only=from_config)
         processor.tokenizer.padding_side = "left"
 
         self.model = model
