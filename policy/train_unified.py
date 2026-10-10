@@ -352,8 +352,10 @@ def run(args):
     if len(loader) == 0:
         raise ValueError("Training dataset is smaller than one batch")
     # Validation is run by rank 0 on the unwrapped model, at the per-GPU batch size.
-    val_loader = (DataLoader(val_ds, batch_size=args.batch_size_per_rank, num_workers=args.workers,
-                             **loader_options) if len(val_ds) and args.rank == 0 else None)
+    # Load validation synchronously: capped validation exits early, and worker
+    # teardown with prefetched batches can abort during iterator cleanup.
+    val_loader = (DataLoader(val_ds, batch_size=args.batch_size_per_rank, num_workers=0)
+                  if len(val_ds) and args.rank == 0 else None)
     output = args.output_dir
     camera_keys = [f"observation.images.cam_{'high' if c == 'head' else 'wrist'}" for c in cameras]
     tactile_keys = [f"observation.images.tac_{side}" for side in ("left", "right")]
