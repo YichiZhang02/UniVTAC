@@ -18,6 +18,7 @@ from policy.checkpoints import load_run
 
 
 def hdf5_observation(path, frame, run):
+    """Reconstruct sensor-format observations for the shared deployment adapter."""
     import cv2
     import h5py
     import numpy as np
@@ -32,7 +33,10 @@ def hdf5_observation(path, frame, run):
             image = cv2.imdecode(np.frombuffer(h5[key][frame], dtype=np.uint8), cv2.IMREAD_COLOR)
             if image is None:
                 raise ValueError(f"Cannot decode {path}:{key}[{frame}]")
-            return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            # Collection encoded sensor arrays directly with OpenCV. Decoding
+            # without conversion restores their original channel order; the
+            # deployment adapter then applies the training channel convention.
+            return image
 
         for key in run["camera_keys"]:
             camera = {"cam_high": "head", "cam_wrist": "wrist"}[key.split(".")[-1]]

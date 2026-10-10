@@ -12,6 +12,7 @@ import argparse
 import traceback
 from pathlib import Path
 from typing import Literal
+from scripts.eval_results import write_result
 from omegaconf import OmegaConf
 
 from resources.envs.utils.env_parser import (
@@ -184,6 +185,12 @@ def eval_policy(
                 f"Total {succ_num}/{test_num}({succ_num/test_num*100:.2f}%) success.")
         finally:
             seed += 1
+        # Persist completed trials before the next reset can abort in native code.
+        if args_cli.result_json is not None:
+            write_result(args_cli.result_json, {
+                'test_num': test_num, 'succ_num': succ_num,
+                'error_num': error_num, 'next_seed': seed,
+            })
     
     return {
         'test_num': test_num,
@@ -286,8 +293,7 @@ def main():
     rate = results['succ_num'] / results['test_num'] * 100 if results['test_num'] else 0.0
     log(f"Final Result: {results['succ_num']}/{results['test_num']}({rate:.2f}%) success.")
     if args_cli.result_json is not None:
-        args_cli.result_json.parent.mkdir(parents=True, exist_ok=True)
-        args_cli.result_json.write_text(json.dumps(results, indent=2) + "\n")
+        write_result(args_cli.result_json, results)
     
     task.close()
     policy.close()

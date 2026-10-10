@@ -261,13 +261,17 @@ void SimEngine::do_advance()
         // Simulation:
         {
             Timer timer{"Simulation"};
-            // 1. Record Friction Candidates at the beginning of the frame
-            record_friction_candidates();
+            // 1. Synchronize positions before building the lagged friction set.
+            // recover() and StateAccessor writes can change the geometry without
+            // restoring the previous frame's contact candidates. Reusing those
+            // candidates can evaluate friction on invalid/degenerate pairs.
             m_global_vertex_manager->update_attributes();
             m_global_vertex_manager->record_prev_positions();
 
-            // 2. Adaptive Parameter Calculation
+            // 2. Detect contacts at the current positions, then freeze them for
+            // friction before prediction/Newton changes the contact set.
             detect_dcd_candidates();
+            record_friction_candidates();
             compute_adaptive_kappa();
 
             // 3. Predict Motion => x_tilde = x + v * dt

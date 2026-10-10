@@ -447,9 +447,6 @@ class BaseTask(UipcRLEnv):
         self.seed(seed)
         ret = super().reset()
         
-        if self.first_frame is not None:
-            self.uipc_sim.replay_frame(self.first_frame)
-
         total_cost = time.perf_counter() - self.start_time
         if total_cost > self.cfg.reset_time_limit:
             raise RuntimeError(
@@ -557,13 +554,19 @@ class BaseTask(UipcRLEnv):
     #     pass
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
+        # Restore UIPC before the parent reset renders or returns observations.
+        # Otherwise sensors observe the previous episode's deformed geometry.
+        if self.first_frame is not None:
+            self.uipc_sim.replay_frame(self.first_frame)
         super()._reset_idx(env_ids)
 
         if self.cfg.random_texture:
             Actor._set_texture('/World/envs/env_0/ground_plate', 'random', self.rng)
-        self._tactile_manager._reset_idx()
         self._actor_manager._reset_idx(self.rng)
         self._robot_manager._reset_idx()
+        # Attachment reference poses must use the reset robot's kinematics.
+        self.sim.forward()
+        self._tactile_manager._reset_idx()
 
         self.plan_success = True
         self.eval_success = False

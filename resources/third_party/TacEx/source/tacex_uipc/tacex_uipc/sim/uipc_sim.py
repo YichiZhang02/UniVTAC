@@ -309,7 +309,7 @@ class UipcSim:
         if self.world.recover(frame_num):
             self.world.retrieve()
         else:
-            print(f"No data for frame {frame_num}.")
+            raise RuntimeError(f"Failed to restore UIPC frame {frame_num} from {self.cfg.workspace}.")
 
     def init_libuipc_scene_rendering(self):
         """Render method for "standalone" libuipc scenes (e.g. the examples in tacex_uipc/examples/libuipc-samples).

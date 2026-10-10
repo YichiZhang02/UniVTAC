@@ -106,6 +106,10 @@ bash test_policy.sh \
 
 当前脚本使用 `demo` 任务配置、`seen` 指令，每个 task 目标为 **20 个有效回合**；起始 seed 为 `1000000`，之后递增，不设置最大 seed。每个 task 遇到 10 次评测异常会停止，reset 超时设为 600 秒。批量评测使用 headless 模式并关闭 livestream。需要调整这些参数时，修改 [test_policy.sh](test_policy.sh) 顶部的设置。
 
+连续 reset 的 UIPC 修复涉及 CUDA 后端：每帧先同步当前位置并重新检测接触，再记录摩擦候选，避免 `world.recover()` 或物体重新摆放后使用上一回合的接触缓存。更新源码后需按 [README_5090.md](README_5090.md) 第 5–6 节重新编译安装 `tacex_uipc`，仅更新 Python 不会替换已安装的 `libuipc_backend_cuda.so`。评测仍在同一进程连续运行各回合；每完成一条都会保存统计，避免后续进程异常丢失已有结果。
+
+2026-10-10 在 RTX 5090 上验证：新增的 `29_recover_parallel_edges_with_stale_friction` 用例在旧后端复现 `Init Residual is nan` / SIGABRT，新后端连续恢复 3 次通过全部 11 项断言；混合 ABD/FEM 的带摩擦恢复用例通过 7,208 项断言。真实 `pull_out_key` 的 depth_deform 60000 checkpoint 同进程完成 2 回合、错误数为 0，第 3 回合预抓取期间按用户要求停止，未完成 20 回合验证。本地 `univtac` 环境已更新 CUDA 后端，旧库备份于 `.cache/uipc-reset-fix-backup/20261010-021455/`。
+
 结果保存在 `test_results/<MODEL_ID>/<STEP>/`：`logs/` 是各 task 的控制台日志，`videos/<task>/video/` 是回合视频，`results/` 是逐 task 统计，`summary.md` 和 `summary.json` 汇总成功率及各 task 成功率的算术平均值。若有 task 未完成目标回合数，平均值显示为 N/A。重测同一个模型和 step 时，脚本会把旧结果目录改名为 `_previous_<时间>` 后再启动，保留中断运行的日志和视频。
 
 更多测试选项见 [policy/TRAINING.md](policy/TRAINING.md)。

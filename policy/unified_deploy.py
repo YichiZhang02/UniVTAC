@@ -24,10 +24,21 @@ def as_numpy(value):
     return value.detach().cpu().numpy() if isinstance(value, torch.Tensor) else np.asarray(value)
 
 
-def rgb_tensor(value, image_size):
+def training_image(value):
+    """Match images read from existing UniVTAC HDF5 demonstrations.
+
+    Collection passes sensor RGB arrays directly to OpenCV's BGR JPEG encoder.
+    Training decodes those bytes and applies BGR2RGB, reversing sensor channels.
+    Existing checkpoints therefore require the same reversal on live inputs.
+    """
     image = as_numpy(value)
     if image.ndim != 3 or image.shape[-1] != 3:
         raise ValueError(f"Expected RGB [H,W,3], got {image.shape}")
+    return cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+
+def rgb_tensor(value, image_size):
+    image = training_image(value)
     image = cv2.resize(image, (image_size, image_size), interpolation=cv2.INTER_AREA)
     return torch.from_numpy(image.copy()).permute(2, 0, 1).float() / 255
 
@@ -153,7 +164,7 @@ class Policy(BasePolicy):
                 stream = observation["tactile"][f"{side}_tactile"]
                 if self.tactile_input_mode in ("rgb_only", "marker_rgb"):
                     key = "rgb" if self.tactile_input_mode == "rgb_only" else "rgb_marker"
-                    raw = {key: as_numpy(stream[key])}
+                    raw = {key: training_image(stream[key])}
                 else:
                     raw = {"marker": as_numpy(stream["marker"])}
                     if self.tactile_input_mode == "depth_deform":
