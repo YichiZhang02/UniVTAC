@@ -57,33 +57,36 @@ hf download google/paligemma-3b-pt-224 \
 
 ### Encoder
 
+- 方法（`--method`）：`ResNet / VAE / MAE / DINOv2 / I-JEPA / V-JEPA`。
+- 尺寸（`--size`）：`S / B`，默认 `S`。
+- 触觉表示（`--input`）：`marker_only / rgb_only / marker_rgb / depth_deform`，默认 `marker_rgb`。
+
 ```bash
 CUDA_VISIBLE_DEVICES=0 bash train_encoder.sh \
   --method ResNet --size S --input marker_rgb
-
-CUDA_VISIBLE_DEVICES=1 bash train_encoder.sh \
-  --method ResNet --size S --input depth_deform
 ```
 
-`--method` 支持 `ResNet / VAE / MAE / DINOv2 / I-JEPA / V-JEPA`。权重和日志保存到 `encoder_results/<input>/<method>/<size>/<时间>/`。
+权重和日志保存到 `encoder_results/<input>/<method>/<size>/<时间>/`。
 
 ### Policy
 
-全部任务、全部 episode、双相机、四卡训练：
+- 模型（`POLICY`）：`act`（ACT）、`pi05`（PI0.5）、`starvla_groot`（StarVLA-GR00T）。
+- 触觉模式（`TACTILE_MODE`）：`none / as_image / encode`。
+- 表示方式（`TACTILE_INPUT_MODE`）：`marker_only / rgb_only / marker_rgb / depth_deform`，与 Encoder 相同。
+- `encode` 模式：`ENCODER_METHOD` 和 `ENCODER_SIZE` 与上述 Encoder 选项相同；`TACTILE_TYPE=cls / full` 分别使用全局特征或完整 token 序列，`TACTILE_INSERT_LOCATION=encoder / decoder` 指定插入位置。
+
+全部任务、全部 episode、双相机、两卡训练：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 NUM_PROCESSES=4 \
+CUDA_VISIBLE_DEVICES=0,1 NUM_PROCESSES=2 \
 POLICY=starvla_groot TRAINING_MODE=multi_task TASKS='' EPISODES=0 CAMERAS=all \
-TACTILE_MODE=encode TACTILE_INPUT_MODE=marker_rgb TACTILE_TYPE=cls \
-TACTILE_INSERT_LOCATION=encoder ENCODER_METHOD=ResNet ENCODER_SIZE=S \
-STEPS=30000 BATCH_SIZE=64 CHUNK_SIZE=32 SAVE_FREQ=5000 \
+TACTILE_MODE=encode TACTILE_INPUT_MODE=marker_rgb \
+TACTILE_TYPE=full TACTILE_INSERT_LOCATION=encoder ENCODER_METHOD=VAE ENCODER_SIZE=S \
+STEPS=100_000 BATCH_SIZE=32 CHUNK_SIZE=32 SAVE_FREQ=10_000 \
 bash train_policy.sh
 ```
 
-`BATCH_SIZE=64` 为全局 batch，四卡时单卡为 16。`POLICY` 支持 `act / pi05 / starvla_groot`；触觉可换为 `depth_deform`、`full`。默认选择对应 Encoder 的最新 `encoder.pth`，也可设置 `ENCODER_CKPT=/path/to/encoder.pth`。
-
-
-配置、checkpoint 和日志统一保存在 `policy_results/` 的实体实验目录；权重文件为 `checkpoint_<step>.pt`，不使用软链接。更多参数见 [policy/TRAINING.md](policy/TRAINING.md)。
+`BATCH_SIZE=32` 为全局 batch，两卡时单卡为 16。此示例显式设置训练 100,000 步；`train_policy.sh` 默认训练 1,000,000 步。默认选择对应 Encoder 的最新 `encoder.pth`，也可设置 `ENCODER_CKPT=/path/to/encoder.pth`。
 
 ## 4. 测试 Policy
 
@@ -114,6 +117,23 @@ bash test_policy.sh \
 
 更多测试选项见 [policy/TRAINING.md](policy/TRAINING.md)。
 
+### 推理资源与权重转移
+
+使用 `--checkpoint` 指定训练目录时，默认加载目录中最新 checkpoint，可用 `--step 30000` 指定步数。转移权重时保留同目录的 `train_config.yml`、`dataset_stats.json`、`episodes.json` 和 `inference_assets/`；离线推理不代表模拟器任务成功率。
+
+新训练的 starvla_groot 和 π0.5 会自动保存推理资源，并在 `train_config.yml` 中记录相对路径。starvla_groot 从目录内的 Qwen 配置创建模型，全部权重来自 policy checkpoint；π0.5 从目录内加载 PaliGemma tokenizer。推理无需原始 pretrained model 或 tactile encoder 目录。未转换的旧训练目录仍支持原来的加载方式。
+
+已有训练结果可直接补齐资源，不重写 `.pt` 权重文件；原配置备份为 `train_config.yml.pre-inference.bak`：
+
+```bash
+python scripts/prepare_inference_checkpoints.py --root policy_results          # 预览
+python scripts/prepare_inference_checkpoints.py --root policy_results --apply  # 转换
+```
+
+也可用 `--root "$RUN_DIR"` 转换单个训练目录，用 `--models-root PATH` 指定转换时的预训练资源目录。同一训练目录的所有 step 共用一份资源，移动整个目录后相对路径仍有效。
+
+当前仅保留 GelSight Mini 传感器资产，包含标定权重和数组，位于 `resources/third_party/TacEx/source/tacex_assets/tacex_assets/data/Sensors/GelSight_Mini/`，随 Git 仓库提供。
+
 ## 5. Git 使用
 
 本仓库的 GitHub 远端为 `origin`，当前开发分支为 `isaac51`。
@@ -139,7 +159,7 @@ git diff --check
 git add -A
 git diff --cached --stat
 git diff --cached --check
-git commit -m "Update policy evaluation and documentation"
+git commit -m "..."
 git push origin isaac51
 ```
 

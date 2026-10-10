@@ -15,6 +15,7 @@ import torch
 
 from ._base_policy import BasePolicy
 from .checkpoints import ROOT, load_run
+from .inference_assets import asset_path
 
 sys.path.insert(0, str(ROOT / "encoder"))
 from modality import INPUT_CHANNELS, tactile_from_arrays
@@ -64,13 +65,13 @@ def make_vla_config(run, device, models_root):
     common["chunk_size"] = saved.get("chunk_size", saved["base"].get("chunk_size", options["chunk_size"]))
     if run["policy"] == "starvla_groot":
         from policy.starvla_groot.configuration_starvla_groot import StarvlaGrootConfig
-        qwen_path = saved.get("inference", {}).get("qwen_path")
-        bundled_qwen = (run["directory"] / qwen_path).resolve() if qwen_path else None
-        base_vlm = bundled_qwen if bundled_qwen and bundled_qwen.is_dir() else models_root / "Qwen3.5-2B"
-        common.update(base_vlm=str(base_vlm), action_dim=8, state_dim=8)
+        bundled = asset_path(run, "qwen_path")
+        common.update(base_vlm=str(bundled or models_root / "Qwen3.5-2B"),
+                      vlm_from_config=bundled is not None, action_dim=8, state_dim=8)
         return StarvlaGrootConfig(**common)
     from policy.pi05.configuration_pi05 import PI05Config
-    common["paligemma_tokenizer_path"] = str(models_root / "pi05_base" / "paligemma-3b-pt-224-tokenizer")
+    common["paligemma_tokenizer_path"] = str(asset_path(run, "tokenizer_path") or
+        models_root / "pi05_base" / "paligemma-3b-pt-224-tokenizer")
     return PI05Config(**common)
 
 

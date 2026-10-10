@@ -399,7 +399,10 @@ def run(args):
             tokenizer = None
             model = StarvlaGrootPolicy(config)
         model.to(args.device)
-        optimizer = torch.optim.AdamW(model.get_optim_params(), lr=config.optimizer_lr,
+        # Keep update/clipping order stable when a policy orders its modules
+        # differently to overlap DDP communication with backward computation.
+        optim_params = list(model.get_optim_params())
+        optimizer = torch.optim.AdamW(optim_params, lr=config.optimizer_lr,
                                       betas=tuple(config.optimizer_betas), eps=config.optimizer_eps,
                                       weight_decay=config.optimizer_weight_decay)
         scheduler = config.get_scheduler_preset().build(optimizer, args.steps)
@@ -414,6 +417,12 @@ def run(args):
                                    "batch_size_per_rank": args.batch_size_per_rank}
     if args.rank == 0:
         output.mkdir(parents=True, exist_ok=True)
+        from policy.inference_assets import export_assets
+        inference = export_assets(output, args.policy,
+            qwen=model.qwen_vl if args.policy == "starvla_groot" else None,
+            tokenizer=tokenizer)
+        if inference is not None:
+            config_dump["inference"] = inference
         (output / "dataset_stats.json").write_text(json.dumps(stats, indent=2))
         (output / "episodes.json").write_text(json.dumps({"train": {k: [p.name for p in v] for k, v in train_files.items()},
                                                             "val": {k: [p.name for p in v] for k, v in val_files.items()}}, indent=2))
@@ -464,7 +473,7 @@ def run(args):
         loss = batch_loss(batch, model)
         loss.backward()
         if args.policy != "act":
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.optimizer_grad_clip_norm)
+            torch.nn.utils.clip_grad_norm_(optim_params, config.optimizer_grad_clip_norm)
         optimizer.step()
         if scheduler:
             scheduler.step()

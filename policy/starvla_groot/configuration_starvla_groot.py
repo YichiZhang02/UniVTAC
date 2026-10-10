@@ -35,6 +35,8 @@ DEFAULT_IMAGE_SIZE = 224
 class StarvlaGrootConfig(SensorRoutingMixin, PreTrainedConfig):
     # === VLM backbone (Qwen2.5-VL / Qwen3-VL / Qwen3.5) ===
     base_vlm: str = "./playground/pretrained_models/Qwen3.5-0.8B"
+    # Deployment builds the backbone from local config, then loads policy weights.
+    vlm_from_config: bool = False
     attn_implementation: str = "sdpa"  # "flash_attention_2" | "eager" | "sdpa"
     dtype: str = "bfloat16"  # backbone load dtype: "bfloat16" | "float32"
 
