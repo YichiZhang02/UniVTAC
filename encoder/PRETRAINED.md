@@ -1,7 +1,112 @@
 # Encoder pretraining sources
 
-An encoder is identified by **representation / pretrained mode / method / size**.
-The three modes describe initialization sources; all three produce tactile features
+## GPU TPS preprocessing
+
+All encoder entry points default to `--tactile-preprocessing auto`. Nonlinear
+and radial depth/deform inputs use the same batched GPU TPS implementation as
+policy training when the model runs on CUDA. Other inputs and CPU runs keep
+their existing preprocessing. Force the CPU reference with
+`TACTILE_PREPROCESSING=cpu bash train_encoder.sh ...` or
+`train_encoder.sh --tactile-preprocessing cpu ...`.
+
+Data workers read depth and markers and solve the small TPS systems. Dense field
+evaluation runs on each DDP rank's CUDA device before model forward, including
+validation and Wan latent calibration. Local action-conditioned JEPA preserves
+its current/future/action contract, and kNN probes use the same preprocessing.
+Four-/five-frame clips no longer redundantly convert the current frame once
+before reading the temporal clip. Input representation versions do not change.
+
+External encoder metrics now include `data_wait_seconds`,
+`data_wait_max_seconds` (the greatest wait across DDP ranks), and `batch_seconds`.
+The existing `seconds` field measures the update after the loader yields,
+including GPU preprocessing; use `batch_seconds` for complete-step throughput.
+
+Already running DLC jobs use frozen sources. To switch at a completed epoch,
+stop the old job and use `scripts/submit_encoder_dlc.py --resume-ledger <old.json>
+--methods ... --preprocessing cuda --submit`. This freezes `last.pth` and carries
+the model, optimizer, EMA teachers, best encoders, epoch and step into a new run.
+Keep the same GPU count (`--gpus` / `--wan-gpus`), sample budget and input mode.
+
+## Random versus official initialization
+
+Explicit `--init scratch|official` on `train_encoder.sh` starts pretraining from
+random weights or official weights, respectively. Omitting it retains the legacy
+tactile export behavior. `-- --export-only` explicitly exports official weights.
+Local `univtac` models support scratch only. The `tactile`/`vision` catalog field
+identifies the architecture family; `initialization` records the weight origin.
+
+```bash
+CUDA_VISIBLE_DEVICES=0 NUM_PROCESSES=1 bash train_encoder.sh \
+  --pretrained-mode tactile --method MAE --init scratch \
+  --input depth_deform_nonlinear_radial
+
+CUDA_VISIBLE_DEVICES=0,1,2,3 NUM_PROCESSES=4 bash train_encoder.sh \
+  --pretrained-mode vision --method Wan2.2-VAE --init scratch \
+  --input depth_deform_nonlinear_radial
+```
+
+New external runs are stored at
+`encoder_results/<input>/<mode>/<method>/<size>/<scratch|official>/<run>/`.
+They save `initialization` in `config.json` and checkpoints. DDP divides the global
+batch of 64 across ranks, keeps trajectories together in the train/validation
+split, and saves each rank's RNG state for epoch-boundary resume. Resume uses the
+same world size, data root, sample count and seed. `last.pth` includes optimizer,
+EMA teachers and pretraining heads; `encoder.pth` contains the best encoder only.
+Wan additionally saves its matching reconstruction model in `best.pth`.
+
+Sparsh uses the official backbones with local `univtac_sparsh_ssl_v1` objectives:
+MAE masked 12-channel patch reconstruction; DINOv2 cross-view register and masked
+patch distillation plus KoLeo (1024 prototypes); I-JEPA and V-JEPA prediction of
+two non-overlapping 6x6 target blocks using an EMA teacher and upstream predictor.
+Video targets span both temporal tube slices. These are four-frame UniVTAC
+recipes, not exact upstream pretraining reproductions. No xformers dependency is
+required. RGB pretraining applies the same episode-first-image background
+subtraction as policy training. Scratch Wan initializes encoder and decoder from
+configuration without loading weights; latent mean/std start at zero/one and are
+recalibrated on training-split posterior modes after every epoch.
+
+Policy selection uses a separate initialization selector:
+
+```bash
+ENCODER_PRETRAINED_MODE=tactile ENCODER_METHOD=MAE ENCODER_SIZE=S \
+ENCODER_PRETRAIN_INIT=scratch TACTILE_MODE=encode \
+TACTILE_INPUT_MODE=depth_deform_nonlinear_radial bash train_policy.sh
+```
+
+Use `ENCODER_PRETRAIN_INIT=official` for encoders initialized from official weights.
+The latest checkpoint is selected within that initialization only. Explicit
+`ENCODER_CKPT` is checked against the requested initialization. Scratch never falls
+back to official weights. `ENCODER_INIT=scratch` is a shorthand for scratch
+selection; the historical `ENCODER_INIT=official` still means raw official weights
+without contact-data pretraining. Defaults remain scratch for local models and
+official for external models. Policy run names and configs record the selection.
+Historical external checkpoints without an initialization field are interpreted
+as official; historical local checkpoints are interpreted as scratch.
+
+`scripts/submit_encoder_dlc.py --submit` submits scratch pretraining for
+MAE-S, DINOv2-B, I-JEPA-S and V-JEPA-S on one GPU each, and Wan2.2-VAE-B on four
+GPUs (16 anchors per GPU), using the existing DLC mount,
+image and quota. It freezes the encoder training sources and records job IDs and
+commands under `encoder_results/dlc_pretraining_<timestamp>/`. Inspect with
+`--ledger <submissions.json> --status`; repeating with the same ledger does not
+resubmit attempted jobs. Defaults: 100,000 anchors, seed 42, radial input, at most
+5 epochs for every model, early stopping after 2 unimproved epochs.
+`external_pretraining.yml` contains the initial training settings.
+
+Verification:
+
+```bash
+python -m unittest scripts.test_external_pretraining
+python scripts/verify_external_pretraining.py --method MAE --init scratch
+python scripts/verify_external_pretraining.py --method Wan2.2-VAE --init official
+```
+
+The GPU check verifies SSL backward, gradients through every frame, parameter
+updates, encoder export/reload and downstream pooled-token projection.
+
+An encoder is identified by **representation / pretrained mode / method / size /
+initialization**. The three modes describe architecture provenance; `initialization`
+separately records scratch or official weights. All modes produce tactile features
 when used by a policy.
 
 All UniVTAC encoder training uses **batch size 64**, including vision adaptation

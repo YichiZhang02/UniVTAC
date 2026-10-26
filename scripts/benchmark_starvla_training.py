@@ -5,6 +5,7 @@ validation and checkpoint export. Run each variant in a fresh process.
 """
 import argparse
 import json
+import os
 from pathlib import Path
 import random
 import sys
@@ -31,12 +32,20 @@ def main():
     p.add_argument("--check-vision", action="store_true")
     p.add_argument("--compile-head", action="store_true")
     p.add_argument("--profile", action="store_true")
+    p.add_argument("--tactile-config", type=Path, help="Saved train_config.yml supplying the tactile encoder and temporal contract")
+    p.add_argument("--tf32", action="store_true")
+    p.add_argument("--ddp-static", action="store_true", help="Use DDP static_graph instead of per-step unused-parameter traversal")
     args = p.parse_args()
     if args.steps < 1 or args.warmup < 1:
         p.error("steps and warmup must be positive")
     torch.set_num_threads(4)
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    if world_size > 1:
+        args.device = f"cuda:{os.environ['LOCAL_RANK']}"
+        torch.distributed.init_process_group("nccl")
     torch.cuda.set_device(args.device)
-    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cuda.matmul.allow_tf32 = args.tf32
     torch.manual_seed(42)
     random.seed(42)
     from policy.vla_common.engine.configs import FeatureType, PolicyFeature
@@ -58,6 +67,20 @@ def main():
                 output_features={"action": PolicyFeature(FeatureType.ACTION, (8,))})
     if args.expert_width is not None:
         base["action_expert_hidden_size"] = args.expert_width
+    tactile_meta = None
+    if args.tactile_config:
+        saved = yaml.safe_load(args.tactile_config.read_text())
+        tactile_meta = saved["tactile_encoder_config"]
+        keys = ["observation.images.tac_left", "observation.images.tac_right"]
+        base.update(tactile_mode="encode", tactile_input_mode=tactile_meta["input_mode"],
+                    tactile_keys=keys, tactile_num_frames=tactile_meta.get("num_frames", 1),
+                    tactile_frame_offset=tactile_meta.get("frame_stride", 1),
+                    tactile_encoder_pretrained_mode=tactile_meta["pretrained_mode"],
+                    tactile_type=tactile_meta["tactile_type"],
+                    tactile_insert_location=saved["routing"]["tactile_insert_location"],
+                    tactile_encoder_path=saved["routing"]["encoder_ckpt"],
+                    tactile_encoder_config=tactile_meta)
+        base["input_features"].update({k: PolicyFeature(FeatureType.VISUAL, (3, 224, 224)) for k in keys})
     config = cls(**base)
     model = model_cls(config).train()
     if args.compile_head:
@@ -83,6 +106,10 @@ def main():
              "action": torch.randn(b, 50, 8, device=args.device),
              "is_pad": torch.zeros(b, 50, dtype=torch.bool, device=args.device),
              "task": ["Lift the can."] * b}
+    if tactile_meta:
+        frames = tactile_meta.get("num_frames", 1)
+        shape = (b, frames, 3, 224, 224) if frames > 1 else (b, 3, 224, 224)
+        batch.update({k: torch.rand(*shape, device=args.device) for k in keys})
     if args.check_vision:
         attentions = [block.attn for block in model.qwen_vl.model.model.visual.blocks]
         patched = [attention.forward for attention in attentions]
@@ -145,6 +172,13 @@ def main():
             torch.testing.assert_close(x, y, rtol=0, atol=0, check_dtype=True)
         print("Feature parity passed", flush=True)
         return
+    core_model = model
+    if world_size > 1:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[int(os.environ['LOCAL_RANK'])], broadcast_buffers=False,
+            gradient_as_bucket_view=True, find_unused_parameters=not args.ddp_static,
+            static_graph=args.ddp_static)
+        args.output = args.output.with_name(args.output.stem + f".rank{rank}" + args.output.suffix)
     records, losses = [], []
     torch.cuda.reset_peak_memory_stats()
     for step in range(args.warmup + args.steps):
@@ -176,9 +210,11 @@ def main():
                                 optimizer_ms=events[3].elapsed_time(events[4])))
     averages = {k: sum(row[k] for row in records) / len(records) for k in records[0]}
     result = dict(policy=args.policy, variant=args.variant, compile_head=args.compile_head,
-                  head_autocast="float32", tf32=False, batch_size=b, views=2, chunk_size=50,
+                  head_autocast="float32", tf32=args.tf32, batch_size=b, views=2, chunk_size=50,
+                  world_size=world_size, rank=rank, ddp_static=args.ddp_static,
+                  tactile_config=str(args.tactile_config) if args.tactile_config else None,
                   action_expert_hidden_size=config.action_expert_hidden_size,
-                  action_head_parameters=sum(p.numel() for p in model.action_head.parameters()),
+                  action_head_parameters=sum(p.numel() for p in core_model.action_head.parameters()),
                   gpu=torch.cuda.get_device_name(), torch=torch.__version__, warmup=args.warmup,
                   steps=args.steps, means=averages, samples_per_second=1000 * b / averages["step_ms"],
                   peak_memory_gib=torch.cuda.max_memory_allocated() / 2**30,
@@ -197,6 +233,8 @@ def main():
             torch.cuda.synchronize()
         print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=25), flush=True)
         prof.export_chrome_trace(str(args.output.with_suffix(".trace.json")))
+    if world_size > 1:
+        torch.distributed.destroy_process_group()
 
 
 if __name__ == "__main__":

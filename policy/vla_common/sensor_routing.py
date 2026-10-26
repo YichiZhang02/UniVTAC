@@ -129,6 +129,8 @@ class SensorRoutingMixin:
     # By default the tactile backbone is fine-tuned end-to-end with the policy. Set True
     # to freeze the backbone and train only the policy projection.
     freeze_tactile_encoder: bool = False
+    # Optional five-frame Wan training optimization; inference retains streaming.
+    wan_training_optimization: str = "reference"  # reference | compiled
 
     # --- state / action routing ---
     # none | absolute_joint | episode_joint | episode_rot6d | absolute_rot6d

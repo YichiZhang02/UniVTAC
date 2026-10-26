@@ -65,7 +65,8 @@ class ExternalEncoder(nn.Module):
         # A checkpoint may also contain tensors and optimizer state: constructor
         # metadata must stay small, JSON-serializable and independent of those weights.
         meta = {key: value for key, value in (metadata or {}).items()
-                if key in ('model_config', 'source_repo', 'source_revision', 'format_version', 'wan_patch_size')}
+                if key in ('model_config', 'source_repo', 'source_revision', 'format_version', 'wan_patch_size',
+                           'initialization', 'latent_calibration')}
         self.mean, self.std = [0., 0., 0.], [1., 1., 1.]
         if mode == 'tactile' and method != 'AnyTouch2':
             sys.path.insert(0, str(ROOT / 'resources/third_party/sparsh'))
@@ -117,7 +118,13 @@ class ExternalEncoder(nn.Module):
             if pretrained:
                 model = AutoencoderKLWan.from_pretrained(folder / 'vae', local_files_only=True, torch_dtype=torch.float32)
             else:
-                model = AutoencoderKLWan.from_config(meta['model_config'])
+                config = meta.get('model_config')
+                if config is None:
+                    config = dict(AutoencoderKLWan.load_config(folder / 'vae', local_files_only=True))
+                    # Upstream video statistics are not valid for random weights.
+                    config['latents_mean'] = [0.] * config['z_dim']
+                    config['latents_std'] = [1.] * config['z_dim']
+                model = AutoencoderKLWan.from_config(config)
             meta['model_config'] = json.loads(json.dumps(dict(model.config), default=str))
             # Only encoder weights belong to the policy. Decoder is owned by adaptation objective.
             self.model = model
@@ -240,11 +247,12 @@ def initial_metadata(mode, method, size, input_mode):
     from encoder.pretrained_registry import result_root
     from encoder.linear_depth_deform import DEPTH_DEFORM_SPECS, depth_deform_spec
     model = ExternalEncoder(mode, method, size)
-    state = dict(model.metadata, input_mode=input_mode, encoder=model.state_dict())
+    state = dict(model.metadata, initialization='official', input_mode=input_mode, encoder=model.state_dict())
     if input_mode in DEPTH_DEFORM_SPECS:
         state['depth_deform_encoding'] = depth_deform_spec(input_mode)
-    out = result_root(input_mode, mode, method, size) / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+    out = result_root(input_mode, mode, method, size, 'official') / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     out.mkdir(parents=True)
     from encoder.checkpoint_io import save_checkpoint
     save_checkpoint(state, out / 'encoder.pth')
+    (out / 'config.json').write_text(json.dumps({k: v for k, v in state.items() if k != 'encoder'}, indent=2))
     return out / 'encoder.pth'

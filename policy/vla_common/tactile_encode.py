@@ -60,6 +60,13 @@ class TactileEncoder(nn.Module):
             self.backbone = TactileViT(size, image_size=state["image_size"], in_chans=state["in_chans"])
         if "encoder" in state:
             self.backbone.load_state_dict(state["encoder"], strict=True)
+        wan_optimization = getattr(config, 'wan_training_optimization', 'reference')
+        if wan_optimization not in ('reference', 'compiled'):
+            raise ValueError(f'Unknown Wan training optimization: {wan_optimization}')
+        if method == 'Wan2.2-VAE' and wan_optimization == 'compiled':
+            from encoder.wan_training_fast import enable_wan_training_fast
+            enable_wan_training_fast(self.backbone.model)
+            torch.backends.cudnn.benchmark = True
         self.method = method
         self.mode = config.tactile_type
         self.keys = list(config.tactile_encoder_keys())

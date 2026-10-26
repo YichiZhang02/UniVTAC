@@ -148,6 +148,22 @@ Outputs are in `test_results/<model_id>/<step>/`: `logs/<task>.log`, `videos/<ta
 
 `NUM_PROCESSES=4 bash train_policy.sh` launches one experiment with four DDP ranks using `torchrun`. Select its GPUs with `CUDA_VISIBLE_DEVICES=0,1,2,3`. `BATCH_SIZE` is the **global** batch size and must be divisible by the number of ranks: `BATCH_SIZE=64 NUM_PROCESSES=4` gives 16 samples per GPU. `WORKERS` is the number of DataLoader CPU workers **per rank**, not the GPU count. A training step is one synchronized optimizer update across all ranks. Checkpoints and validation are handled by rank 0; checkpoint model keys have no DDP `module.` prefix. Multi-task sampling retains task balancing, sharding one deterministic weighted draw across ranks and refreshing it when the loader completes an epoch.
 
+For `depth_deform_nonlinear` and `depth_deform_nonlinear_radial`, `TACTILE_PREPROCESSING=auto` (the default) moves dense TPS evaluation to CUDA during training. Data workers solve the small TPS systems and load camera depth; the GPU constructs the same dense displacement fields in bounded frame batches. This avoids rebuilding a dense CPU interpolation map for almost every shuffled tactile frame. Duplicate-marker merging, camera-depth normalization, temporal windows, and displacement encoding retain the CPU reference semantics. Other representations use their existing preprocessing. Set `TACTILE_PREPROCESSING=cpu` to run the reference path. `data_wait_max_ms` reports the greatest data wait across ranks, since a slow nonzero rank can stall the entire update while rank 0 reports little local waiting.
+
+For the two StarVLA Wan2.2-VAE encode commands, `WAN_TRAINING_OPTIMIZATION=compiled` opts into full-clip five-frame encoding, channels-last 3D convolution weights, CuDNN algorithm selection, and compilation of the encoder forward/backward. Five frames and all trainable encoder parameters are retained. The reference path remains the default; set the flag only on a Wan command. Parameter names, shapes and dtypes are checkpoint compatible. Eval/no-grad, non-five-frame, tiled and sliced execution use the streaming reference. Compilation/autotuning adds first-step startup time and can produce ordinary floating-point differences; it does not promise bitwise identical training. With the stage profiler, add `--wan-training-optimization compiled`. `scripts/test_wan_training_fast.py` checks temporal boundaries, gradients, fallback paths and state-dict compatibility.
+
+To measure training stages on an existing run's episode split and encoder initializer:
+
+```bash
+OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 NCCL_DEBUG=WARN \
+python -m torch.distributed.run --standalone --nproc-per-node=2 \
+  scripts/profile_starvla_run.py \
+  --run-config policy_results/<run>/train_config.yml \
+  --output /tmp/starvla_stage_profile --batch-per-gpu 16 --steps 25 --warmup 5
+```
+
+This uses real HDF5 observations, verifies and reuses the saved dataset statistics, and starts from the original pretrained weights. It does not resume or overwrite the source run. `--preprocessing cpu` measures the CPU reference. Each measured step synchronizes CUDA so its stage timings add up to wall time; profiling can modestly affect throughput. The output contains per-rank samples and mean/median/p90 summaries in `stage_profile.json`. Forward timings for the tactile encoder, Qwen, and action head are subdivisions of `forward_ms`; Qwen input preparation is itself a subdivision of Qwen time. `backward_ddp_ms` includes overlapping backward computation, gradient communication, and rank waits, and cannot be interpreted as pure communication time. Initialization, warmup, validation, and checkpoint writes are excluded from the steady-step summaries. The ordinary trainer also accepts `--profile-stages --profile-warmup 5`.
+
 Run the following four scripts on four separate eight-GPU machines, one script per machine. Each script launches two independent four-GPU DDP experiments on GPU groups `0,1,2,3` and `4,5,6,7`, running six methods in three rounds. Across the four machines, up to eight experiments run concurrently; the 24 configurations do not overlap.
 
 | Machine | Script | Tactile input | Tactile type |

@@ -7,6 +7,9 @@ import time
 from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import h5py
 import numpy as np
@@ -21,12 +24,17 @@ from modality import tactile_from_arrays
 from image_io import require_rgb_model
 from pretrained_registry import history_indices, result_root
 from checkpoint_io import save_checkpoint
+from encoder.tactile_preprocessing import (
+    collate_tactile_tps, initialize_data_worker, prepare_encoder_batch,
+    prepare_tactile_tps, resolve_tactile_preprocessing,
+)
 
 
 class TactileFrames(Dataset):
     def __init__(self, files, limit=None, temporal=False, seed=42,
                  input_mode='marker_rgb', lengths=None, action_conditioned=False,
-                 future_horizon=1, action_mean=None, action_std=None, num_frames=1):
+                 future_horizon=1, action_mean=None, action_std=None, num_frames=1,
+                 tactile_preprocessing='cpu'):
         self.temporal = temporal
         self.action_conditioned = action_conditioned
         self.future_horizon = future_horizon
@@ -34,6 +42,7 @@ class TactileFrames(Dataset):
         self.action_std = action_std
         self.input_mode = input_mode
         self.num_frames = num_frames
+        self.tactile_preprocessing = tactile_preprocessing
         self.rows = []
         self.handles = {}
         self.mapped_arrays = {}
@@ -102,9 +111,22 @@ class TactileFrames(Dataset):
 
     def __getitem__(self, index):
         path, side, step = self.rows[index]
-        image = self._read(path, side, step)
+        if self.tactile_preprocessing == 'cuda':
+            if path not in self.handles:
+                self.handles[path] = h5py.File(path, 'r')
+            h5 = self.handles[path]
+            indices = history_indices(step, self.num_frames, 2) if not self.action_conditioned else [step]
+            packed = {'images': [prepare_tactile_tps(h5, side, t, 224) for t in indices]}
+            if self.action_conditioned or self.temporal:
+                future = step + (self.future_horizon if self.action_conditioned else 1)
+                packed['future_images'] = [prepare_tactile_tps(h5, side, future, 224)]
+            if self.action_conditioned:
+                packed['action'] = torch.from_numpy(self._joint_action(path, step + self.future_horizon))
+            return packed
         if self.num_frames > 1 and not self.action_conditioned:
             image = torch.stack([self._read(path, side, t) for t in history_indices(step, self.num_frames, 2)])
+        else:
+            image = self._read(path, side, step)
         if self.action_conditioned:
             future = self._read(path, side, step + self.future_horizon)
             action = self._joint_action(path, step + self.future_horizon)
@@ -171,12 +193,12 @@ class FileChunkBatchSampler(Sampler):
 
 @torch.no_grad()
 def knn_accuracy(encoder, train_probe, train_labels, val_probe, val_labels,
-                 device, precision):
+                 device, precision, input_mode=None):
     def embeddings(loader):
         chunks = []
         for batch in loader:
+            batch = prepare_encoder_batch(batch, device, input_mode)
             images = batch[0] if isinstance(batch, (list, tuple)) else batch
-            images = images.to(device, non_blocking=True)
             with torch.autocast(device_type=device.type,
                                 enabled=device.type == 'cuda' and precision == 'bf16',
                                 dtype=torch.bfloat16):
@@ -199,6 +221,9 @@ def run(args):
     np.random.seed(args.seed)
     random.seed(args.seed)
     torch.set_num_threads(4)
+    args.tactile_preprocessing = resolve_tactile_preprocessing(
+        args.tactile_preprocessing, args.input_mode, args.device)
+    use_cuda_tps = args.tactile_preprocessing == 'cuda'
     files = sorted(args.data_root.glob('*/hdf5/*.hdf5'))
     if not files:
         raise FileNotFoundError(f'No contact HDF5 files under {args.data_root}')
@@ -224,16 +249,20 @@ def run(args):
     action_mean, action_std = joint_action_stats(train_files) if action_conditioned else (None, None)
     train_data = TactileFrames(train_files, train_limit, action_conditioned, args.seed,
                                args.input_mode, lengths, action_conditioned,
-                               args.future_horizon, action_mean, action_std)
+                               args.future_horizon, action_mean, action_std,
+                               tactile_preprocessing=args.tactile_preprocessing)
     val_data = TactileFrames(val_files, val_limit, action_conditioned, args.seed + 1,
                              args.input_mode, lengths, action_conditioned,
-                             args.future_horizon, action_mean, action_std)
+                             args.future_horizon, action_mean, action_std,
+                             tactile_preprocessing=args.tactile_preprocessing)
+    preprocessing_options = (dict(collate_fn=collate_tactile_tps, worker_init_fn=initialize_data_worker)
+                             if use_cuda_tps else {})
     loader_options = dict(batch_size=args.batch_size, num_workers=args.workers,
-                          pin_memory=True, persistent_workers=args.workers > 0)
+                          pin_memory=True, persistent_workers=args.workers > 0, **preprocessing_options)
     if args.input_mode in DEPTH_DEFORM_SPECS:
         batch_sampler = FileChunkBatchSampler(train_data, args.batch_size, args.seed)
         loader = DataLoader(train_data, batch_sampler=batch_sampler, num_workers=args.workers,
-                            pin_memory=True, persistent_workers=args.workers > 0)
+                            pin_memory=True, persistent_workers=args.workers > 0, **preprocessing_options)
         val_data.rows.sort()
     else:
         loader = DataLoader(train_data, shuffle=True, drop_last=True,
@@ -251,7 +280,7 @@ def run(args):
             train_data, args.probe_per_class_train, args.seed + 100, class_to_id)
         val_pick, val_labels = probe_indices(
             val_data, args.probe_per_class_val, args.seed + 101, class_to_id)
-        probe_options = dict(batch_size=args.batch_size, num_workers=2, pin_memory=True)
+        probe_options = dict(batch_size=args.batch_size, num_workers=2, pin_memory=True, **preprocessing_options)
         train_probe = DataLoader(Subset(train_data, train_pick), shuffle=False, **probe_options)
         val_probe = DataLoader(Subset(val_data, val_pick), shuffle=False, **probe_options)
     device = torch.device(args.device)
@@ -334,10 +363,9 @@ def run(args):
                 factor = args.min_lr_ratio + (1 - args.min_lr_ratio) * .5 * (1 + math.cos(math.pi * fraction))
             for group in optimizer.param_groups:
                 group['lr'] = args.lr * factor
-            if isinstance(batch, (list, tuple)):
-                batch = [item.to(device, non_blocking=True) for item in batch]
-            else:
-                batch = [batch.to(device, non_blocking=True)]
+            batch = prepare_encoder_batch(batch, device, args.input_mode)
+            if not isinstance(batch, (list, tuple)):
+                batch = [batch]
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type,
                                 enabled=device.type == 'cuda' and args.precision == 'bf16',
@@ -388,10 +416,9 @@ def run(args):
             for val_step, batch in enumerate(val_loader):
                 if args.max_val_steps and val_step >= args.max_val_steps:
                     break
-                if isinstance(batch, (list, tuple)):
-                    batch = [item.to(device, non_blocking=True) for item in batch]
-                else:
-                    batch = [batch.to(device, non_blocking=True)]
+                batch = prepare_encoder_batch(batch, device, args.input_mode)
+                if not isinstance(batch, (list, tuple)):
+                    batch = [batch]
                 with torch.autocast(device_type=device.type,
                                     enabled=device.type == 'cuda' and args.precision == 'bf16',
                                     dtype=torch.bfloat16):
@@ -409,7 +436,7 @@ def run(args):
         if train_probe is not None:
             core = model.module if isinstance(model, nn.DataParallel) else model
             probe_accuracy = knn_accuracy(core.encoder, train_probe, train_labels,
-                                          val_probe, val_labels, device, args.precision)
+                                          val_probe, val_labels, device, args.precision, args.input_mode)
             improved = probe_accuracy > best_probe_accuracy
             if improved:
                 best_probe_accuracy = probe_accuracy
@@ -471,6 +498,7 @@ def main(default_method=None):
     parser.add_argument('--epochs', type=int)
     parser.add_argument('--batch-size', type=int, choices=[64])
     parser.add_argument('--workers', type=int)
+    parser.add_argument('--tactile-preprocessing', choices=['auto', 'cpu', 'cuda'], default='auto')
     parser.add_argument('--lr', type=float)
     parser.add_argument('--weight-decay', type=float)
     parser.add_argument('--warmup-epochs', type=int)

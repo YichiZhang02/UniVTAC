@@ -1,5 +1,6 @@
 """Encoder identity is (pretrained_mode, method, size), never method alone."""
 from pathlib import Path
+import json
 
 ROOT = Path(__file__).resolve().parents[1]
 SPARSH_REVISION = 'fee6a05a97330eca014b59c71ac41596fe3974a7'
@@ -50,9 +51,46 @@ def default_size(mode, method):
     return 'S' if mode == 'univtac' else SOURCES[mode, method][0]
 
 
-def result_root(input_mode, mode, method, size):
+def result_root(input_mode, mode, method, size, initialization=None):
     validate_identity(mode, method, size)
-    return ROOT / 'encoder_results' / input_mode / mode / method / size
+    root = ROOT / 'encoder_results' / input_mode / mode / method / size
+    if initialization is not None:
+        if initialization not in ('scratch', 'official'):
+            raise ValueError('initialization must be scratch or official')
+        root = root / initialization
+    return root
+
+
+def checkpoint_initialization(metadata):
+    # Historical local methods were random; historical external runs loaded
+    # official weights. New exports always store an explicit provenance field.
+    return metadata.get('initialization', 'scratch' if metadata.get('pretrained_mode', 'univtac') == 'univtac' else 'official')
+
+
+def require_initialization(metadata, requested):
+    actual = checkpoint_initialization(metadata)
+    if requested is not None and requested != actual:
+        raise ValueError(f'Encoder initialization mismatch: requested {requested}, checkpoint is {actual}')
+    return actual
+
+
+def latest_checkpoint(input_mode, mode, method, size, initialization):
+    """Select by initialization before mtime; inspect small configs, not weights."""
+    root = result_root(input_mode, mode, method, size)
+    candidates = []
+    for path in root.rglob('encoder.pth'):
+        config_path = path.parent / 'config.json'
+        if config_path.exists():
+            metadata = json.loads(config_path.read_text())
+        else:
+            # New layout is unambiguous even when an export lacks config.json.
+            first = path.relative_to(root).parts[0]
+            metadata = {'pretrained_mode': mode}
+            if first in ('scratch', 'official'):
+                metadata['initialization'] = first
+        if checkpoint_initialization(metadata) == initialization:
+            candidates.append(path)
+    return max(candidates, key=lambda path: path.stat().st_mtime_ns) if candidates else None
 
 
 def history_indices(step, num_frames=4, stride=2):
@@ -64,5 +102,5 @@ def constructor_metadata(checkpoint):
     keys = ('format_version', 'color_order', 'pretrained_mode', 'method', 'size',
             'architecture', 'image_size', 'input_mode', 'in_chans', 'depth_deform_encoding',
             'num_frames', 'frame_stride', 'background_offset', 'model_config', 'source_repo', 'source_revision',
-            'wan_patch_size')
+            'wan_patch_size', 'initialization', 'latent_calibration')
     return {key: checkpoint[key] for key in keys if key in checkpoint}

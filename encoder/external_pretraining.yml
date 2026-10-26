@@ -1,0 +1,22 @@
+# Starting budgets for UniVTAC SSL, not upstream recipe reproductions.
+# All batches are global; torchrun divides 64 across GPUs.
+MAE:
+  epochs: 5
+  lr: 0.0001
+  weight_decay: 0.05
+DINOv2:
+  epochs: 5
+  lr: 0.0001
+  weight_decay: 0.05
+I-JEPA:
+  epochs: 5
+  lr: 0.0001
+  weight_decay: 0.05
+V-JEPA:
+  epochs: 5
+  lr: 0.0001
+  weight_decay: 0.04
+Wan2.2-VAE:
+  epochs: 5
+  lr: 0.0001
+  weight_decay: 0.01

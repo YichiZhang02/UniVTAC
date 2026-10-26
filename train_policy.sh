@@ -47,10 +47,23 @@ ENCODER_PRETRAINED_MODE="${ENCODER_PRETRAINED_MODE:-univtac}" # univtac | tactil
 ENCODER_METHOD="${ENCODER_METHOD:-VAE}"
 ENCODER_SIZE="${ENCODER_SIZE:-}"
 ENCODER_CKPT="${ENCODER_CKPT:-}"
-ENCODER_INIT="${ENCODER_INIT:-latest}" # latest | official (tactile or Wan2.2-VAE initializer, no encoder training)
+ENCODER_INIT="${ENCODER_INIT:-latest}" # latest | scratch (alias) | official (raw official weights)
+if [[ "$ENCODER_INIT" == scratch ]]; then
+  ENCODER_PRETRAIN_INIT=scratch
+  ENCODER_INIT=latest
+fi
+if [[ "$ENCODER_PRETRAINED_MODE" == univtac ]]; then
+  ENCODER_PRETRAIN_INIT="${ENCODER_PRETRAIN_INIT:-scratch}"
+else
+  ENCODER_PRETRAIN_INIT="${ENCODER_PRETRAIN_INIT:-official}"
+fi
+case "$ENCODER_PRETRAIN_INIT" in scratch|official) ;; *) echo "ENCODER_PRETRAIN_INIT must be scratch or official" >&2; exit 2 ;; esac
 case "$ENCODER_INIT" in
   latest) ;;
   official)
+    if [[ "$ENCODER_PRETRAIN_INIT" != official ]]; then
+      echo "ENCODER_INIT=official requires ENCODER_PRETRAIN_INIT=official" >&2; exit 2
+    fi
     if [[ "$TACTILE_MODE" != encode || -n "$ENCODER_CKPT" ]] || \
        [[ "$ENCODER_PRETRAINED_MODE" != tactile && ! ( "$ENCODER_PRETRAINED_MODE" == vision && "$ENCODER_METHOD" == Wan2.2-VAE ) ]]; then
       echo "ENCODER_INIT=official requires tactile or vision/Wan2.2-VAE encode mode and no ENCODER_CKPT" >&2
@@ -99,9 +112,9 @@ if [[ -z "$ENCODER_SIZE" ]]; then
   ENCODER_SIZE="$("$PYTHON_BIN" -c 'import sys; from encoder.pretrained_registry import default_size; print(default_size(*sys.argv[1:]))' "$ENCODER_PRETRAINED_MODE" "$ENCODER_METHOD")"
 fi
 if [[ "$TACTILE_MODE" == encode && -z "$ENCODER_CKPT" && "$ENCODER_INIT" != official ]]; then
-  ENCODER_CKPT="$(find "$ROOT/encoder_results/$TACTILE_INPUT_MODE/$ENCODER_PRETRAINED_MODE/$ENCODER_METHOD/$ENCODER_SIZE" -name encoder.pth -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
-  if [[ -z "$ENCODER_CKPT" && "$ENCODER_PRETRAINED_MODE" != tactile ]]; then
-    echo "No encoder checkpoint found; set ENCODER_CKPT or run train_encoder.sh" >&2
+  ENCODER_CKPT="$("$PYTHON_BIN" -c 'import sys; from encoder.pretrained_registry import latest_checkpoint; print(latest_checkpoint(*sys.argv[1:]) or "")' "$TACTILE_INPUT_MODE" "$ENCODER_PRETRAINED_MODE" "$ENCODER_METHOD" "$ENCODER_SIZE" "$ENCODER_PRETRAIN_INIT")"
+  if [[ -z "$ENCODER_CKPT" && ( "$ENCODER_PRETRAINED_MODE" != tactile || "$ENCODER_PRETRAIN_INIT" == scratch ) ]]; then
+    echo "No $ENCODER_PRETRAIN_INIT encoder checkpoint found; set ENCODER_CKPT or run train_encoder.sh --init $ENCODER_PRETRAIN_INIT" >&2
     exit 2
   fi
 fi
@@ -112,7 +125,7 @@ RUN_LABEL="${POLICY}_${TRAINING_MODE}_${TASK_LABEL}_${TACTILE_MODE}"
 if [[ "$ACTION_MODE" == relative_joint ]]; then RUN_LABEL+="_relative_joint"; fi
 if [[ "$TACTILE_MODE" != none ]]; then RUN_LABEL+="_${TACTILE_INPUT_MODE}"; fi
 if [[ "$TACTILE_MODE" == encode ]]; then
-  RUN_LABEL+="_${ENCODER_PRETRAINED_MODE}_${ENCODER_METHOD}_${ENCODER_SIZE}_${TACTILE_TYPE}_${TACTILE_INSERT_LOCATION}"
+  RUN_LABEL+="_${ENCODER_PRETRAINED_MODE}_${ENCODER_METHOD}_${ENCODER_SIZE}_${ENCODER_PRETRAIN_INIT}_${TACTILE_TYPE}_${TACTILE_INSERT_LOCATION}"
 fi
 if [[ -n "${RUN_TAG:-}" ]]; then RUN_LABEL+="_${RUN_TAG}"; fi
 RUN_NAME="$(date +%Y%m%d-%H%M%S-%N)_${RUN_LABEL}"
@@ -124,6 +137,8 @@ args=(
   --action-mode "$ACTION_MODE"
   --tactile-mode "$TACTILE_MODE" --tactile-input-mode "$TACTILE_INPUT_MODE"
   --tactile-type "$TACTILE_TYPE" --tactile-insert-location "$TACTILE_INSERT_LOCATION"
+  --tactile-preprocessing "${TACTILE_PREPROCESSING:-auto}"
+  --wan-training-optimization "${WAN_TRAINING_OPTIMIZATION:-reference}"
   --steps "$STEPS" --batch-size "$BATCH_SIZE" --chunk-size "$CHUNK_SIZE" --n-action-steps "$N_ACTION_STEPS"
   --workers "$WORKERS" --save-freq "$SAVE_FREQ" --log-freq "$LOG_FREQ"
   --max-val-batches "$MAX_VAL_BATCHES"
@@ -137,6 +152,7 @@ if [[ "$POLICY" == n0vtla ]]; then
 fi
 if [[ "$SAVE_CHECKPOINT" == false ]]; then args+=(--no-save-checkpoint); fi
 args+=(--encoder-pretrained-mode "$ENCODER_PRETRAINED_MODE" --encoder-method "$ENCODER_METHOD" --encoder-size "$ENCODER_SIZE")
+args+=(--encoder-pretrain-init "$ENCODER_PRETRAIN_INIT")
 if ((NUM_PROCESSES > 1)); then
   # --standalone selects an unused rendezvous port, allowing concurrent jobs.
   exec "$PYTHON_BIN" -u -m torch.distributed.run --standalone --nnodes=1 \

@@ -41,17 +41,9 @@ def encode_displacement(displacement_px):
     return (0.5 + np.sign(field) * signed_magnitude).astype(np.float32)
 
 
-@lru_cache(maxsize=8)
-def _tps_interpolation_map(fixed_bytes, count, source_h, source_w, image_size):
-    """Cache dense TPS weights; per-frame work is only a matrix product.
-
-    Uniform coordinate scaling preserves the sensor's x/y pixel metric.
-    The affine polynomial also reproduces rigid translations and affine fields
-    outside the marker hull. Duplicate padding points are merged within .001
-    sensor pixels, averaging their displacement without changing raw records.
-    Invalid/collinear grids are rejected by SciPy.
-    """
-    fixed = np.frombuffer(fixed_bytes, dtype=np.float32).reshape(count, 2)
+def merge_tps_controls(fixed):
+    """Use the same duplicate reduction for CPU and batched CUDA evaluation."""
+    count = len(fixed)
     # Old 64-marker training arrays pad a 63-marker grid by repeating a point,
     # sometimes with float32 roundoff. TPS requires distinct control points.
     parent = np.arange(count)
@@ -68,6 +60,14 @@ def _tps_interpolation_map(fixed_bytes, count, source_h, source_w, image_size):
     reduction = np.zeros((len(sizes), count), dtype=np.float64)
     reduction[group, np.arange(count)] = 1. / sizes[group]
     controls = reduction @ fixed.astype(np.float64)
+    return controls, reduction
+
+
+@lru_cache(maxsize=8)
+def _tps_interpolation_map(fixed_bytes, count, source_h, source_w, image_size):
+    """Cache dense TPS weights, merging duplicate controls within .001 pixels."""
+    fixed = np.frombuffer(fixed_bytes, dtype=np.float32).reshape(count, 2)
+    controls, reduction = merge_tps_controls(fixed)
     scale = float(max(source_h, source_w))
     xs = (np.arange(image_size, dtype=np.float64) + .5) * source_w / image_size
     ys = (np.arange(image_size, dtype=np.float64) + .5) * source_h / image_size

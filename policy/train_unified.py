@@ -218,7 +218,7 @@ class UniVTACDataset(Dataset):
     def __init__(self, files_by_task, *, cameras, tactile_mode, tactile_input_mode,
                  chunk_size, stats, policy, image_size, action_mode="absolute_joint",
                  tactile_num_frames=1, tactile_frame_stride=1, tactile_pretrained_mode='univtac',
-                 tactile_background_offset=.5):
+                 tactile_background_offset=.5, tactile_preprocessing='cpu'):
         self.rows = []
         self.task_counts = defaultdict(int)
         self.cameras = cameras
@@ -234,6 +234,7 @@ class UniVTACDataset(Dataset):
         self.tactile_frame_stride = tactile_frame_stride
         self.tactile_pretrained_mode = tactile_pretrained_mode
         self.tactile_background_offset = tactile_background_offset
+        self.tactile_preprocessing = tactile_preprocessing
         self._files = {}
         for task, paths in files_by_task.items():
             for path in paths:
@@ -307,6 +308,11 @@ class UniVTACDataset(Dataset):
                 else:
                     from encoder.pretrained_registry import history_indices
                     indices = history_indices(t, self.tactile_num_frames, self.tactile_frame_stride)
+                    if self.tactile_preprocessing == 'cuda':
+                        from encoder.tactile_preprocessing import prepare_tactile_tps
+                        out[f"observation.images.tac_{side}"] = [
+                            prepare_tactile_tps(f, side, i, self.image_size) for i in indices]
+                        continue
                     frames = [read_tactile(f, side, i, self.tactile_input_mode, self.image_size) for i in indices]
                     tactile = torch.stack(frames) if self.tactile_num_frames > 1 else frames[0]
                     if self.tactile_pretrained_mode == 'tactile' and self.tactile_input_mode in ('rgb_only', 'marker_rgb'):
@@ -362,6 +368,7 @@ def make_config(args, base, camera_keys, tactile_keys):
                   tactile_encoder_pretrained_mode=args.encoder_pretrained_mode,
                   tactile_num_frames=args.tactile_num_frames, tactile_frame_offset=args.tactile_frame_stride,
                   freeze_tactile_encoder=False,
+                  wan_training_optimization=getattr(args, 'wan_training_optimization', 'reference'),
                   tactile_encoder_path=str(args.encoder_ckpt) if args.tactile_mode == "encode" else None,
                   tactile_insert_location=args.tactile_insert_location,
                   state_mode="absolute_joint", action_mode=args.action_mode, action_gap=1,
@@ -385,6 +392,10 @@ from policy.pi05.tokenization import make_pi_tokens
 
 
 def run(args):
+    if getattr(args, 'wan_training_optimization', 'reference') != 'reference' and (
+            args.policy not in ('starvla_groot', 'starvla_pi')
+            or args.tactile_mode != 'encode' or args.encoder_method != 'Wan2.2-VAE'):
+        raise ValueError('Compiled Wan training requires StarVLA with a Wan2.2-VAE tactile encoder')
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -395,6 +406,9 @@ def run(args):
     if args.tactile_mode == 'encode':
         from encoder.pretrained_registry import validate_identity
         validate_identity(args.encoder_pretrained_mode, args.encoder_method, args.encoder_size)
+        requested_init = getattr(args, 'encoder_pretrain_init', None)
+        if not args.encoder_ckpt and requested_init == 'scratch':
+            raise ValueError('scratch pretraining requires an explicit trained encoder checkpoint; official fallback is disabled')
         if not args.encoder_ckpt and (args.encoder_pretrained_mode == 'tactile' or
                                      (args.encoder_pretrained_mode == 'vision' and args.encoder_method == 'Wan2.2-VAE')):
             # Export once on rank zero. No download or random fallback during policy restore.
@@ -408,6 +422,8 @@ def run(args):
         if not args.encoder_ckpt:
             raise ValueError('encode mode requires a trained encoder checkpoint')
         encoder_state = torch.load(args.encoder_ckpt, map_location='cpu', weights_only=True)
+        from encoder.pretrained_registry import require_initialization
+        args.encoder_pretrain_init = require_initialization(encoder_state, requested_init)
         if encoder_state.get('pretrained_mode', 'univtac') != args.encoder_pretrained_mode:
             raise ValueError('Encoder checkpoint pretrained_mode does not match requested mode')
         if encoder_state.get('method', args.encoder_method) != args.encoder_method or encoder_state.get('size', args.encoder_size) != args.encoder_size:
@@ -441,6 +457,12 @@ def run(args):
     else:
         cameras = ["head", "wrist"] if args.cameras == "all" else ["head"]
     image_size = 256 if args.policy == "act" else args.image_size
+    tps_mode = args.tactile_input_mode in ('depth_deform_nonlinear', 'depth_deform_nonlinear_radial')
+    use_cuda_tps = (args.tactile_preprocessing != 'cpu' and str(args.device).startswith('cuda')
+                    and tps_mode and args.tactile_mode in ('encode', 'as_image'))
+    if args.tactile_preprocessing == 'cuda' and not use_cuda_tps:
+        raise ValueError('CUDA tactile preprocessing requires a nonlinear TPS input, CUDA device, and encode/as_image mode')
+    args.tactile_preprocessing = 'cuda' if use_cuda_tps else 'cpu'
     make_ds = lambda files: UniVTACDataset(files, cameras=cameras, tactile_mode=args.tactile_mode,
                                            tactile_input_mode=args.tactile_input_mode,
                                            chunk_size=args.chunk_size, stats=stats,
@@ -448,7 +470,8 @@ def run(args):
                                            tactile_num_frames=args.tactile_num_frames,
                                            tactile_frame_stride=args.tactile_frame_stride,
                                            tactile_pretrained_mode=args.encoder_pretrained_mode,
-                                           tactile_background_offset=130/255 if args.encoder_method == 'AnyTouch2' else .5)
+                                           tactile_background_offset=130/255 if args.encoder_method == 'AnyTouch2' else .5,
+                                           tactile_preprocessing=args.tactile_preprocessing)
     train_ds, val_ds = make_ds(train_files), make_ds(val_files)
     weights = [1.0 / train_ds.task_counts[task] for task, _, _ in train_ds.rows]
     if args.world_size > 1:
@@ -462,6 +485,9 @@ def run(args):
     loader_options = {"multiprocessing_context": "spawn"} if args.workers else {}
     if args.workers and args.policy in ("starvla_groot", "starvla_pi"):
         loader_options["persistent_workers"] = True
+    if use_cuda_tps:
+        from encoder.tactile_preprocessing import collate_tactile_tps, initialize_data_worker
+        loader_options.update(collate_fn=collate_tactile_tps, worker_init_fn=initialize_data_worker)
     loader = DataLoader(train_ds, batch_size=args.batch_size_per_rank, shuffle=sampler is None,
                         sampler=sampler, num_workers=args.workers, pin_memory=True, drop_last=True,
                         generator=torch.Generator().manual_seed(args.seed + args.rank), **loader_options)
@@ -470,7 +496,8 @@ def run(args):
     # Validation is run by rank 0 on the unwrapped model, at the per-GPU batch size.
     # Load validation synchronously: capped validation exits early, and worker
     # teardown with prefetched batches can abort during iterator cleanup.
-    val_loader = (DataLoader(val_ds, batch_size=args.batch_size_per_rank, num_workers=0)
+    val_loader = (DataLoader(val_ds, batch_size=args.batch_size_per_rank, num_workers=0,
+                            **({'collate_fn': collate_tactile_tps} if use_cuda_tps else {}))
                   if len(val_ds) and args.rank == 0 else None)
     output = args.output_dir
     camera_keys = [f"observation.images.cam_{'high' if c == 'head' else 'wrist'}" for c in cameras]
@@ -596,6 +623,12 @@ def run(args):
     random.seed(args.seed + args.rank)
     np.random.seed(args.seed + args.rank)
     torch.manual_seed(args.seed + args.rank)
+    profiler = None
+    if args.profile_stages:
+        if not str(args.device).startswith('cuda'):
+            raise ValueError('Stage profiling requires CUDA')
+        from policy.training_profile import TrainingStageProfiler
+        profiler = TrainingStageProfiler(core_model, output, args.profile_warmup)
 
     def batch_loss(raw, forward_model):
         if tokenizer is not None:
@@ -604,8 +637,18 @@ def run(args):
                 tokenize_batch(raw, tokenizer, config.tokenizer_max_length)
             else:
                 make_pi_tokens(raw, tokenizer, config.tokenizer_max_length)
-        batch = {k: v.to(args.device, non_blocking=True) if isinstance(v, torch.Tensor) else v
+        if profiler and profiler.current is not None:
+            profiler.mark('h2d_start')
+        batch = {k: v.to(args.device, non_blocking=True)
+                 if isinstance(v, torch.Tensor) and not k.endswith('.tps_source_hw') else v
                  for k, v in raw.items()}
+        if profiler and profiler.current is not None:
+            profiler.mark('h2d_end')
+        if use_cuda_tps:
+            from encoder.tactile_preprocessing import materialize_tactile_tps
+            materialize_tactile_tps(batch, args.tactile_input_mode)
+        if profiler and profiler.current is not None:
+            profiler.mark('tps_end')
         if args.policy == "act":
             cam = torch.stack([batch[k] for k in camera_keys], dim=1)
             mean = torch.tensor([0.485, 0.456, 0.406], device=cam.device)[None, None, :, None, None]
@@ -621,6 +664,8 @@ def run(args):
     train_iter = iter(loader)
     log_start, last_log_step, data_wait_seconds = time.perf_counter(), 0, 0.0
     for step in range(1, args.steps + 1):
+        if profiler:
+            profiler.begin(step)
         data_start = time.perf_counter()
         try:
             batch = next(train_iter)
@@ -630,27 +675,41 @@ def run(args):
                 sampler.set_epoch(epoch)
             train_iter = iter(loader)
             batch = next(train_iter)
-        data_wait_seconds += time.perf_counter() - data_start
+        step_data_wait = time.perf_counter() - data_start
+        data_wait_seconds += step_data_wait
         model.train()
         optimizer.zero_grad(set_to_none=True)
         loss = batch_loss(batch, model)
+        if profiler:
+            profiler.mark('forward_end')
         loss.backward()
+        if profiler:
+            profiler.mark('backward_end')
         if args.policy != "act":
             torch.nn.utils.clip_grad_norm_(optim_params, config.optimizer_grad_clip_norm)
+        if profiler:
+            profiler.mark('clip_end')
         optimizer.step()
+        if profiler:
+            profiler.mark('optimizer_end')
         if scheduler:
             scheduler.step()
+        if profiler:
+            profiler.finish(1000 * step_data_wait)
         if step == 1 or step % args.log_freq == 0:
+            count = step - last_log_step
             mean_loss = loss.detach().float().clone()
+            max_data_wait = mean_loss.new_tensor(1000 * data_wait_seconds / count)
             if args.world_size > 1:
                 dist.all_reduce(mean_loss)
                 mean_loss /= args.world_size
+                dist.all_reduce(max_data_wait, op=dist.ReduceOp.MAX)
             if args.rank == 0:
                 value = float(mean_loss)  # Also waits for this logging window's GPU work.
                 elapsed = time.perf_counter() - log_start
-                count = step - last_log_step
                 print(f"step={step} loss={value:.6f} lr={optimizer.param_groups[0]['lr']:.3g} "
-                      f"step/s={count / elapsed:.3f} data_wait_ms={1000 * data_wait_seconds / count:.1f}", flush=True)
+                      f"step/s={count / elapsed:.3f} data_wait_ms={1000 * data_wait_seconds / count:.1f} "
+                      f"data_wait_max_ms={float(max_data_wait):.1f}", flush=True)
             log_start, last_log_step, data_wait_seconds = time.perf_counter(), step, 0.0
         if step % args.save_freq == 0 or step == args.steps:
             if val_loader and args.max_val_batches:
@@ -672,6 +731,8 @@ def run(args):
                 dist.barrier()
             # Report training throughput separately from validation/checkpoint I/O.
             log_start, last_log_step, data_wait_seconds = time.perf_counter(), step, 0.0
+    if profiler:
+        profiler.save()
     if args.rank == 0:
         print(f"Finished: {output}")
 
@@ -693,9 +754,15 @@ def main():
     p.add_argument("--tactile-type", choices=["cls", "full", "pool", "pool3x3", "pool5x5", "pool7x7"], default="cls",
                    help="cls: global token; full: all tokens; pool3x3/pool5x5/pool7x7: adaptive spatial pooling; pool aliases pool3x3")
     p.add_argument("--tactile-insert-location", choices=["encoder", "decoder"], default="decoder")
+    p.add_argument('--tactile-preprocessing', choices=['auto', 'cpu', 'cuda'], default='auto',
+                   help='Batch dense nonlinear TPS on CUDA; cpu retains reference preprocessing')
+    p.add_argument('--wan-training-optimization', choices=['reference', 'compiled'], default='reference',
+                   help='Compile a full five-frame Wan encoder; keep all encoder parameters trainable')
     p.add_argument("--encoder-ckpt", type=Path)
     p.add_argument("--encoder-method", default="ResNet")
     p.add_argument('--encoder-pretrained-mode', choices=['univtac', 'tactile', 'vision'], default='univtac')
+    p.add_argument('--encoder-pretrain-init', choices=['scratch', 'official'],
+                   help='Require the encoder checkpoint to have this pretraining initialization')
     p.add_argument("--encoder-size", choices=["S", "B", "L"], default=None)
     p.add_argument("--cameras", choices=["auto", "head", "all"], default="auto")
     p.add_argument("--image-size", type=int, default=224)
@@ -705,6 +772,8 @@ def main():
     p.add_argument("--steps", type=int, required=True)
     p.add_argument("--batch-size", type=int, required=True, help="Global batch size, divided across DDP ranks")
     p.add_argument("--workers", type=int, default=4)
+    p.add_argument('--profile-stages', action='store_true', help='Synchronize each step and save detailed stage timings')
+    p.add_argument('--profile-warmup', type=int, default=5)
     p.add_argument("--log-freq", type=int, default=100)
     p.add_argument("--save-freq", type=int, default=5000)
     p.add_argument("--no-save-checkpoint", dest="save_checkpoint", action="store_false")
@@ -719,6 +788,8 @@ def main():
         p.error("n-action-steps must be between 1 and chunk-size")
     if args.workers < 0 or args.log_freq < 1 or args.save_freq < 1:
         p.error("workers must be nonnegative; log-freq and save-freq must be positive")
+    if args.profile_stages and not 0 <= args.profile_warmup < args.steps:
+        p.error('profile-warmup must be nonnegative and smaller than steps')
     try:
         setup_distributed(args)
         with training_log(args):
