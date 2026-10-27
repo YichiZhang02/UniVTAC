@@ -3,7 +3,7 @@ import numpy as np
 
 @configclass
 class TaskCfg(BaseTaskCfg):
-    pass
+    step_lim = 600
 
 class Task(BaseTask):
     def __init__(self, cfg: BaseTaskCfg, mode:Literal['collect', 'eval'] = 'collect', render_mode: str|None = None, **kwargs):

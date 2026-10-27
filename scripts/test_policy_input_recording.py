@@ -51,6 +51,19 @@ def observation():
 
 
 class RecordingTest(unittest.TestCase):
+    def test_temporal_video_uses_latest_frame_without_modifying_history(self):
+        _, run = make_policy('depth_deform_nonlinear_radial')
+        recorder = PolicyInputRecorder(run)
+        for frames in (4, 5):
+            images = {key: torch.zeros(1, 3, 224, 224) for key in recorder.keys}
+            history = torch.zeros(1, frames, 3, 224, 224)
+            history[:, -1] = .75
+            images['observation.images.tac_left'] = history
+            original = history.clone()
+            frame = recorder.frame(images, 0, 0).numpy()
+            np.testing.assert_array_equal(frame[32:, 448:672], np.full((224, 224, 3), 191, np.uint8))
+            torch.testing.assert_close(history, original)
+
     def test_pixels_match_actual_adapter_for_every_mode(self):
         for mode in ('none','rgb_only','marker_only','marker_rgb','depth_deform_20','depth_deform_80','depth_deform_160','depth_deform_240','depth_deform_nonlinear', 'depth_deform_nonlinear_radial'):
             with self.subTest(mode=mode):

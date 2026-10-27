@@ -52,7 +52,16 @@ class PolicyInputRecorder:
             value = images[key]
             if isinstance(value, torch.Tensor):
                 value = value.detach().cpu().numpy()
-            image = np.asarray(value)[0].transpose(1,2,0)
+            value = np.asarray(value)
+            history_length = None
+            if value.ndim == 5:
+                # Temporal inputs are chronological [B,T,C,H,W]. Display the
+                # newest frame; raw HDF5 recording retains the full history.
+                history_length = value.shape[1]
+                value = value[:, -1]
+            if value.ndim != 4:
+                raise ValueError(f'Unexpected actual policy image {key}: {value.shape}')
+            image = value[0].transpose(1,2,0)
             if image.shape != (self.size,self.size,3):
                 raise ValueError(f'Unexpected actual policy image {key}: {image.shape}')
             if not np.isfinite(image).all() or image.min() < -1e-5 or image.max() > 1.00001:
@@ -61,6 +70,8 @@ class PolicyInputRecorder:
             label = key.removeprefix('observation.images.')
             if 'tac_' in label:
                 label += ' '+self.mode
+            if history_length is not None:
+                label += f' latest/{history_length}'
             cv2.putText(canvas,label,(i*self.size+4,12),cv2.FONT_HERSHEY_SIMPLEX,.36,(255,255,255),1)
             cv2.putText(canvas,f'action {action_index}; input {source_action}',
                         (i*self.size+4,26),cv2.FONT_HERSHEY_SIMPLEX,.35,(255,255,255),1)
