@@ -47,8 +47,8 @@ export SAVE_FREQ=10000
 # Tactile settings can be overridden through environment variables at launch.
 export TACTILE_MODE="${TACTILE_MODE:-none}"
 export TACTILE_INPUT_MODE="${TACTILE_INPUT_MODE:-rgb_only}"
-export ENCODER_METHOD="${ENCODER_METHOD:-VAE}"
-export ENCODER_SIZE="${ENCODER_SIZE:-S}"
+export ENCODER_METHOD="${ENCODER_METHOD:-RVAE}"
+export ENCODER_SIZE="${ENCODER_SIZE:-}"
 
 echo "$POLICY: tactile=$TACTILE_MODE, action=$ACTION_MODE, training=$TRAINING_MODE, task=${TASK:-all}, tasks=${TASKS:-all}, episodes=${EPISODES:-0}, cameras=${CAMERAS:-all}, image_size=$IMAGE_SIZE, GPUs=$CUDA_VISIBLE_DEVICES, global_batch=$BATCH_SIZE, steps=$STEPS, save_freq=$SAVE_FREQ, chunk_size=$CHUNK_SIZE, n_action_steps=$N_ACTION_STEPS"
 exec bash "$ROOT/train_policy.sh" "$@"

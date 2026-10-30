@@ -303,7 +303,11 @@ def run(args):
             require_rgb_model(saved)
         for key, expected in (('method', args.method), ('size', args.size),
                               ('input_mode', args.input_mode)):
-            if saved.get(key) != expected:
+            actual = saved.get(key)
+            if key == 'method':
+                from encoder.catalog import canonical_name
+                actual = canonical_name('univtac', actual)
+            if actual != expected:
                 raise ValueError(f'Resume checkpoint {key}={saved.get(key)!r}, expected {expected!r}')
         if args.input_mode in DEPTH_DEFORM_SPECS and saved.get('depth_deform_encoding') != depth_deform_spec(args.input_mode):
             raise ValueError('Resume requires matching depth_deform normalization; start a new run for the new encoding')
@@ -314,12 +318,12 @@ def run(args):
         best_val_loss = saved.get('best_val_loss', float('inf'))
         best_probe_accuracy = saved.get('best_probe_accuracy', -1.0)
         stale_epochs = saved.get('stale_epochs', 0)
-    family = 'resnet' if args.method == 'ResNet' else 'vit'
-    out = args.output_dir or (args.resume.parent if args.resume else None) or (result_root(args.input_mode, 'univtac', args.method, args.size) /
+    family = 'resnet' if args.method == 'ResNet' else 'sd_vae' if args.method == 'SD-VAE' else 'vit'
+    out = args.output_dir or (args.resume.parent if args.resume else None) or (result_root(args.input_mode, 'univtac', args.method, args.size, 'scratch') /
                               datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
     out.mkdir(parents=True, exist_ok=True)
     config = vars(args).copy()
-    config.update(pretrained_mode='univtac', num_frames=1, frame_stride=1)
+    config.update(pretrained_mode='univtac', initialization='scratch', num_frames=1, frame_stride=1)
     config["color_order"] = "RGB"
     if args.input_mode in DEPTH_DEFORM_SPECS:
         config['depth_deform_encoding'] = depth_deform_spec(args.input_mode)
@@ -459,7 +463,7 @@ def run(args):
         core = model.module if isinstance(model, nn.DataParallel) else model
         if not args.no_save:
             checkpoint = {'format_version': 3, 'color_order': 'RGB', 'method': args.method, 'size': args.size,
-                          'pretrained_mode': 'univtac', 'num_frames': 1, 'frame_stride': 1,
+                          'pretrained_mode': 'univtac', 'initialization': 'scratch', 'num_frames': 1, 'frame_stride': 1,
                           'architecture': family,
                           'image_size': 224, 'input_mode': args.input_mode,
                           'in_chans': INPUT_CHANNELS[args.input_mode],
@@ -473,10 +477,10 @@ def run(args):
                           'stale_epochs': stale_epochs}
             save_checkpoint(checkpoint, out / 'last.pth')
             if improved:
-                if args.method == 'VAE':
+                if args.method in ('RVAE', 'RAE', 'SD-VAE'):
                     # Keep the matching encoder/decoder for best-epoch reconstruction.
                     save_checkpoint(checkpoint, out / 'best.pth')
-                save_checkpoint({key: checkpoint[key] for key in ('format_version', 'pretrained_mode', 'num_frames', 'frame_stride', 'method', 'size', 'architecture',
+                save_checkpoint({key: checkpoint[key] for key in ('format_version', 'pretrained_mode', 'initialization', 'num_frames', 'frame_stride', 'method', 'size', 'architecture',
                             'image_size', 'input_mode', 'in_chans', 'color_order', 'depth_deform_encoding', 'encoder', 'epoch', 'step',
                             'val_loss', 'best_val_loss', 'knn_accuracy',
                             'best_probe_accuracy')}, out / 'encoder.pth')
@@ -490,6 +494,7 @@ def run(args):
 def main(default_method=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--method', required=default_method is None, default=default_method, choices=METHODS)
+    parser.add_argument('--init', choices=['scratch'], default='scratch')
     parser.add_argument('--size', default='S', choices=['S', 'B'])
     parser.add_argument('--input-mode', default='marker_rgb', choices=INPUT_CHANNELS)
     parser.add_argument('--data-root', type=Path, default=Path(__file__).resolve().parent.parent / 'resources/data/contact')
@@ -522,6 +527,8 @@ def main(default_method=None):
     parser.add_argument('--resume', type=Path, help='Resume from a last.pth checkpoint')
     parser.add_argument('--no-save', action='store_true', help='Skip checkpoints for throughput measurements')
     args = parser.parse_args()
+    from encoder.catalog import selection
+    _, args.method, args.size, _ = selection('univtac', args.method, args.size, args.init)
     args.config = args.config or Path(__file__).resolve().parent / args.method / 'config.yml'
     settings = yaml.safe_load(args.config.read_text())[args.size]
     settings.update(settings.pop('input_overrides', {}).get(args.input_mode, {}))

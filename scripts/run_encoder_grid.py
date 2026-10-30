@@ -10,7 +10,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-METHODS = ('ResNet', 'VAE', 'MAE', 'DINOv2', 'I-JEPA', 'V-JEPA')
+import sys
+sys.path.insert(0, str(ROOT))
+from encoder.catalog import LOCAL_METHODS
+METHODS = LOCAL_METHODS
 INPUTS = ('marker_only', 'rgb_only', 'marker_rgb', 'depth_deform_20', 'depth_deform_80', 'depth_deform_160', 'depth_deform_240', 'depth_deform_nonlinear', 'depth_deform_nonlinear_radial')
 
 

@@ -311,7 +311,7 @@ class PoolingTest(unittest.TestCase):
             tactile_encoder_method='MAE', tactile_encoder_config=state,
             tactile_ckpt=None, tactile_encoder_size='S', tactile_input_mode='rgb_only')
         x = torch.randn(2, 3, 16, 16)
-        with patch('vit_encoder.TactileViT', FakeEncoder):
+        with patch('encoder.factory.local_encoder', side_effect=FakeEncoder):
             full = build_tactile_backbone(args)
             expected = full(x)
             for mode, side in [('pool', 3), ('pool3x3', 3), ('pool5x5', 5), ('pool7x7', 7)]:

@@ -44,9 +44,13 @@ TACTILE_INPUT_MODE="${TACTILE_INPUT_MODE:-${INPUT_MODE:-marker_rgb}}" # marker_o
 TACTILE_TYPE="${TACTILE_TYPE:-full}"        # cls | full | pool3x3 | pool5x5 | pool7x7 (pool aliases pool3x3; encode only)
 TACTILE_INSERT_LOCATION="${TACTILE_INSERT_LOCATION:-encoder}"
 ENCODER_PRETRAINED_MODE="${ENCODER_PRETRAINED_MODE:-univtac}" # univtac | tactile | vision
-ENCODER_METHOD="${ENCODER_METHOD:-VAE}"
+ENCODER_METHOD="${ENCODER_METHOD:-RVAE}"
 ENCODER_SIZE="${ENCODER_SIZE:-}"
 ENCODER_CKPT="${ENCODER_CKPT:-}"
+if [[ "$TACTILE_MODE" == encode ]]; then
+  IDENTITY="$("$PYTHON_BIN" -c 'import sys; from encoder.catalog import selection; print(*selection(sys.argv[1], sys.argv[2], sys.argv[3] or None)[:3])' "$ENCODER_PRETRAINED_MODE" "$ENCODER_METHOD" "$ENCODER_SIZE")"
+  read -r ENCODER_PRETRAINED_MODE ENCODER_METHOD ENCODER_SIZE <<< "$IDENTITY"
+fi
 ENCODER_INIT="${ENCODER_INIT:-latest}" # latest | scratch (alias) | official (raw official weights)
 if [[ "$ENCODER_INIT" == scratch ]]; then
   ENCODER_PRETRAIN_INIT=scratch
@@ -57,7 +61,7 @@ if [[ "$ENCODER_PRETRAINED_MODE" == univtac ]]; then
 else
   ENCODER_PRETRAIN_INIT="${ENCODER_PRETRAIN_INIT:-official}"
 fi
-case "$ENCODER_PRETRAIN_INIT" in scratch|official) ;; *) echo "ENCODER_PRETRAIN_INIT must be scratch or official" >&2; exit 2 ;; esac
+case "$ENCODER_PRETRAIN_INIT" in scratch|official|adapted) ;; *) echo "ENCODER_PRETRAIN_INIT must be scratch, official or adapted" >&2; exit 2 ;; esac
 case "$ENCODER_INIT" in
   latest) ;;
   official)
@@ -65,7 +69,7 @@ case "$ENCODER_INIT" in
       echo "ENCODER_INIT=official requires ENCODER_PRETRAIN_INIT=official" >&2; exit 2
     fi
     if [[ "$TACTILE_MODE" != encode || -n "$ENCODER_CKPT" ]] || \
-       [[ "$ENCODER_PRETRAINED_MODE" != tactile && ! ( "$ENCODER_PRETRAINED_MODE" == vision && "$ENCODER_METHOD" == Wan2.2-VAE ) ]]; then
+       [[ "$ENCODER_PRETRAINED_MODE" != tactile && ! ( "$ENCODER_PRETRAINED_MODE" == vision && "$ENCODER_METHOD" == Wan22_VAE ) ]]; then
       echo "ENCODER_INIT=official requires tactile or vision/Wan2.2-VAE encode mode and no ENCODER_CKPT" >&2
       exit 2
     fi
@@ -113,7 +117,7 @@ if [[ -z "$ENCODER_SIZE" ]]; then
 fi
 if [[ "$TACTILE_MODE" == encode && -z "$ENCODER_CKPT" && "$ENCODER_INIT" != official ]]; then
   ENCODER_CKPT="$("$PYTHON_BIN" -c 'import sys; from encoder.pretrained_registry import latest_checkpoint; print(latest_checkpoint(*sys.argv[1:]) or "")' "$TACTILE_INPUT_MODE" "$ENCODER_PRETRAINED_MODE" "$ENCODER_METHOD" "$ENCODER_SIZE" "$ENCODER_PRETRAIN_INIT")"
-  if [[ -z "$ENCODER_CKPT" && ( "$ENCODER_PRETRAINED_MODE" != tactile || "$ENCODER_PRETRAIN_INIT" == scratch ) ]]; then
+  if [[ -z "$ENCODER_CKPT" && ( "$ENCODER_PRETRAINED_MODE" != tactile || "$ENCODER_PRETRAIN_INIT" != official ) ]]; then
     echo "No $ENCODER_PRETRAIN_INIT encoder checkpoint found; set ENCODER_CKPT or run train_encoder.sh --init $ENCODER_PRETRAIN_INIT" >&2
     exit 2
   fi
@@ -138,7 +142,7 @@ args=(
   --tactile-mode "$TACTILE_MODE" --tactile-input-mode "$TACTILE_INPUT_MODE"
   --tactile-type "$TACTILE_TYPE" --tactile-insert-location "$TACTILE_INSERT_LOCATION"
   --tactile-preprocessing "${TACTILE_PREPROCESSING:-auto}"
-  --wan-training-optimization "${WAN_TRAINING_OPTIMIZATION:-reference}"
+  --wan-training-optimization "${WAN_TRAINING_OPTIMIZATION:-compiled}"
   --steps "$STEPS" --batch-size "$BATCH_SIZE" --chunk-size "$CHUNK_SIZE" --n-action-steps "$N_ACTION_STEPS"
   --workers "$WORKERS" --save-freq "$SAVE_FREQ" --log-freq "$LOG_FREQ"
   --max-val-batches "$MAX_VAL_BATCHES"

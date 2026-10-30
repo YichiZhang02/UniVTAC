@@ -1,0 +1,5 @@
+epochs: 5
+lr: 1.0e-05
+weight_decay: 0.05
+batch_size: 64
+multi_gpu: false

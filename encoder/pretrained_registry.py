@@ -1,12 +1,13 @@
 """Encoder identity is (pretrained_mode, method, size), never method alone."""
 from pathlib import Path
 import json
+from encoder.catalog import LOCAL_METHODS, EXTERNAL_METHODS, canonical_name, resolve_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 SPARSH_REVISION = 'fee6a05a97330eca014b59c71ac41596fe3974a7'
 MODES = ('univtac', 'tactile', 'vision')
 METHODS = {
-    'univtac': ('ResNet', 'VAE', 'MAE', 'DINOv2', 'I-JEPA', 'V-JEPA'),
+    'univtac': LOCAL_METHODS + ('VAE',),
     'tactile': ('MAE', 'DINOv2', 'I-JEPA', 'V-JEPA', 'AnyTouch2'),
     'vision': ('DINOv3', 'SigLIP2', 'V-JEPA2', 'Wan2.2-VAE'),
 }
@@ -25,6 +26,10 @@ SOURCES = {
 
 
 def validate_identity(mode, method, size=None):
+    public_name = method
+    if public_name in EXTERNAL_METHODS and size not in (None, 'official'):
+        raise ValueError(f'{public_name} requires size official')
+    mode, method, size = resolve_identity(mode, method, size)
     if mode not in MODES or method not in METHODS[mode]:
         raise ValueError(f'Unsupported encoder {mode}/{method}; choices: {METHODS}')
     if mode == 'univtac' and size is not None and size not in ('S', 'B'):
@@ -34,6 +39,7 @@ def validate_identity(mode, method, size=None):
 
 
 def temporal_spec(mode, method):
+    mode, method, _ = resolve_identity(mode, method)
     if mode == 'univtac':
         return (1, 1)
     if method == 'Wan2.2-VAE':
@@ -42,21 +48,25 @@ def temporal_spec(mode, method):
 
 
 def source_dir(mode, method):
+    mode, method, _ = resolve_identity(mode, method)
     size = SOURCES[mode, method][0]
     return ROOT / 'resources/pretrained_models' / mode / method / size
 
 
 def default_size(mode, method):
     validate_identity(mode, method)
-    return 'S' if mode == 'univtac' else SOURCES[mode, method][0]
+    return 'official' if canonical_name(mode, method) in EXTERNAL_METHODS else 'S' if mode == 'univtac' else SOURCES[mode, method][0]
 
 
 def result_root(input_mode, mode, method, size, initialization=None):
     validate_identity(mode, method, size)
+    mode = resolve_identity(mode, method)[0]
     root = ROOT / 'encoder_results' / input_mode / mode / method / size
     if initialization is not None:
-        if initialization not in ('scratch', 'official'):
-            raise ValueError('initialization must be scratch or official')
+        if mode == 'univtac' and initialization != 'scratch':
+            raise ValueError('Local encoders only support scratch initialization')
+        if initialization not in ('scratch', 'official', 'adapted'):
+            raise ValueError('initialization must be scratch, official or adapted')
         root = root / initialization
     return root
 
@@ -78,15 +88,18 @@ def latest_checkpoint(input_mode, mode, method, size, initialization):
     """Select by initialization before mtime; inspect small configs, not weights."""
     root = result_root(input_mode, mode, method, size)
     candidates = []
-    for path in root.rglob('encoder.pth'):
+    roots = [root]
+    if mode == 'univtac' and method == 'RVAE':
+        roots.append(ROOT / 'encoder_results' / input_mode / mode / 'VAE' / size)
+    for path in (p for directory in roots for p in directory.rglob('encoder.pth')):
         config_path = path.parent / 'config.json'
         if config_path.exists():
             metadata = json.loads(config_path.read_text())
         else:
             # New layout is unambiguous even when an export lacks config.json.
-            first = path.relative_to(root).parts[0]
+            first = path.parent.parent.name if path.parent.parent.name in ('scratch', 'official', 'adapted') else ''
             metadata = {'pretrained_mode': mode}
-            if first in ('scratch', 'official'):
+            if first in ('scratch', 'official', 'adapted'):
                 metadata['initialization'] = first
         if checkpoint_initialization(metadata) == initialization:
             candidates.append(path)

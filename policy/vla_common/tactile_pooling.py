@@ -31,10 +31,10 @@ def pool_spatial_tokens(tokens, grid_size, prefix_tokens=0, pool_size=3):
 def tactile_token_grid(backbone, method, pretrained_mode, token_count):
     """Return the spatial grid, independently of the number of temporal slices."""
     if pretrained_mode == 'univtac':
-        side = (7 if method == 'VAE' else isqrt(token_count) if method == 'ResNet'
+        side = (28 if method == 'SD-VAE' else 7 if method in ('VAE', 'RVAE') else isqrt(token_count) if method == 'ResNet'
                 else backbone.grid_size)
         return side, side
-    if method == 'Wan2.2-VAE':
+    if method in ('Wan2.2-VAE', 'Wan22_VAE'):
         side = 14 // backbone.wan_patch_size
         return side, side
     model = backbone.model
@@ -62,9 +62,10 @@ def univtac_pool_tokens(backbone, method, images, pool_size=3):
         # ResNet-B has 2048 spatial channels but a 512-D global feature.
         # Reuse its pretrained FC to put all tokens in the same space.
         patches = net.fc(patches)
-    elif method == 'VAE':
+    elif method in ('VAE', 'RVAE', 'SD-VAE'):
         cls, patches = backbone.cls_and_latent_tokens(images)
-        patches = pool_spatial_tokens(patches, (7, 7), pool_size=pool_size)
+        side = 28 if method == 'SD-VAE' else 7
+        patches = pool_spatial_tokens(patches, (side, side), pool_size=pool_size)
     else:
         tokens = backbone.tokens(images)
         cls = tokens[:, :1]

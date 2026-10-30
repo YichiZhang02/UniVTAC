@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--warmup', type=int, default=5)
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--preprocessing', choices=['cpu', 'cuda'], default='cuda')
-    parser.add_argument('--wan-training-optimization', choices=['reference', 'compiled'], default='reference')
+    parser.add_argument('--wan-training-optimization', choices=['reference', 'compiled'], default='compiled')
     cli = parser.parse_args()
     if not 0 <= cli.warmup < cli.steps:
         parser.error('warmup must be nonnegative and smaller than steps')

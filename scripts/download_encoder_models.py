@@ -7,6 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from encoder.pretrained_registry import ROOT, SOURCES, source_dir
+from encoder.catalog import canonical_name
 
 
 def main():
@@ -32,7 +33,7 @@ def main():
             record.update(status='failed', error=f'{type(exc).__name__}: {exc}')
         return f'{mode}/{method}', record
 
-    items = [item for item in SOURCES.items() if not args.methods or item[0][1] in args.methods]
+    items = [item for item in SOURCES.items() if not args.methods or item[0][1] in args.methods or canonical_name(*item[0]) in args.methods]
     if any(mode == 'tactile' and method != 'AnyTouch2' for (mode, method), _ in items):
         from scripts.setup_encoder_backends import ensure_sparsh
         ensure_sparsh()

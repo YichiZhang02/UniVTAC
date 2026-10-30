@@ -9,6 +9,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from encoder.pretrained_registry import ROOT, SOURCES, source_dir, temporal_spec, validate_identity
+from encoder.catalog import canonical_name, resolve_identity
 
 
 def resize_frames(x, hw):
@@ -27,38 +28,12 @@ def patchify_latents(latent, patch_size=2):
                                                  c*patch_size*patch_size))
 
 
-class AnyTouchBackbone(nn.Module):
-    """Official AnyTouch2 encoder, expressed with the installed Transformers CLIP blocks."""
-    def __init__(self, config):
-        from transformers import CLIPVisionConfig, CLIPVisionModel
-        self_config = CLIPVisionConfig(**config['vision_config'])
-        super().__init__()
-        self.touch_model = CLIPVisionModel(self_config).vision_model
-        self.touch_model.embeddings.patch_embedding = nn.Conv3d(3, self_config.hidden_size,
-            (2, self_config.patch_size, self_config.patch_size), (2, self_config.patch_size, self_config.patch_size), bias=False)
-        n = 2 * (self_config.image_size // self_config.patch_size) ** 2
-        self.touch_model.embeddings.position_embedding = nn.Embedding(n + 1, self_config.hidden_size)
-        self.sensor_token = nn.Parameter(torch.zeros(20, 5, self_config.hidden_size))
-        self.new_position_ids = nn.Parameter(torch.arange(n + 1)[None], requires_grad=False)
-        self.touch_projection = nn.Linear(self_config.hidden_size, config['projection_dim'], bias=False)
-
-    def forward(self, x):
-        emb = self.touch_model.embeddings
-        patches = emb.patch_embedding(x.transpose(1, 2)).flatten(2).transpose(1, 2)
-        pos = emb.position_embedding(self.new_position_ids)
-        cls = (emb.class_embedding + pos[:, 0]).unsqueeze(1).expand(x.shape[0], -1, -1)
-        # UniVTAC optical sensor is GelSight Mini (official sensor ID 3).
-        sensor = self.sensor_token[3][None].expand(x.shape[0], -1, -1)
-        hidden = torch.cat((cls, sensor, patches + pos[:, 1:]), 1)
-        hidden = self.touch_model.pre_layrnorm(hidden)
-        hidden = self.touch_model.encoder(inputs_embeds=hidden).last_hidden_state
-        return self.touch_projection(self.touch_model.post_layernorm(hidden))
-
-
 class ExternalEncoder(nn.Module):
     def __init__(self, mode, method, size, *, metadata=None, pretrained=True, with_decoder=False):
         super().__init__()
         validate_identity(mode, method, size)
+        public_method, public_size = method, size
+        mode, method, size = resolve_identity(mode, method, size)
         self.mode, self.method, self.size = mode, method, size
         self.num_frames, self.frame_stride = temporal_spec(mode, method)
         folder = source_dir(mode, method)
@@ -68,103 +43,10 @@ class ExternalEncoder(nn.Module):
                 if key in ('model_config', 'source_repo', 'source_revision', 'format_version', 'wan_patch_size',
                            'initialization', 'latent_calibration')}
         self.mean, self.std = [0., 0., 0.], [1., 1., 1.]
-        if mode == 'tactile' and method != 'AnyTouch2':
-            sys.path.insert(0, str(ROOT / 'resources/third_party/sparsh'))
-            module = importlib.import_module('tactile_ssl.model.vision_transformer')
-            self.embed_dim = 384 if size == 'S' else 768
-            # New exports use square inputs; restore the resolution saved by older policies.
-            image_size = (metadata or {}).get('image_size', (224, 224))
-            self.hw = (image_size, image_size) if isinstance(image_size, int) else tuple(image_size)
-            self.model = module.VisionTransformer(img_size=self.hw, in_chans=3 if method == 'V-JEPA' else 12,
-                embed_dim=self.embed_dim, depth=12, num_heads=6 if size == 'S' else 12,
-                pos_embed_fn='sinusoidal', num_register_tokens=0 if method == 'MAE' else 1,
-                num_frames=4 if method == 'V-JEPA' else 1, tubelet_size=2)
-            if pretrained:
-                from safetensors.torch import load_file
-                paths = list(folder.glob('*.safetensors'))
-                if len(paths) != 1:
-                    raise FileNotFoundError(f'Expected one official Sparsh weight file in {folder}')
-                weights = load_file(paths[0])
-                key = 'patch_embed.proj.weight'
-                if method != 'V-JEPA':
-                    # Preserve original 2-frame response on repeated pairs; all 4 frames participate.
-                    weights[key] = weights[key].repeat(1, 2, 1, 1) / 2
-                # DINO's learned corruption token belongs to pretraining, not inference.
-                weights.pop('masktoken', None)
-                self.model.load_state_dict(weights, strict=True)
-        elif method == 'AnyTouch2':
-            config = meta.get('model_config')
-            if config is None:
-                config = json.loads((Path(__file__).parent / 'anytouch2_config.json').read_text())
-            self.model = AnyTouchBackbone(config)
-            self.embed_dim, self.hw = config['projection_dim'], (224, 224)
-            self.mean = [.48145466, .4578275, .40821073]
-            self.std = [.26862954, .26130258, .27577711]
-            if pretrained:
-                checkpoint = torch.load(folder / 'checkpoint-4frames.pth', map_location='cpu', weights_only=True)
-                checkpoint = checkpoint.get('model', checkpoint)
-                weights = {k.split('touch_mae_model.', 1)[1]: v for k, v in checkpoint.items()
-                           if 'touch_mae_model.' in k and 'decoder' not in k and 'mask_token' not in k}
-                self.model.load_state_dict(weights, strict=True)
-            meta['model_config'] = config
-        elif method == 'Wan2.2-VAE':
-            # Historical policy checkpoints retain their four-frame/48-D contract.
-            self.num_frames = (metadata or {}).get('num_frames', self.num_frames)
-            self.wan_patch_size = meta.get('wan_patch_size', 1 if self.num_frames == 4 else 2)
-            if self.num_frames not in (4, 5) or self.wan_patch_size not in (1, 2):
-                raise ValueError('Unsupported Wan temporal/patch contract')
-            meta['wan_patch_size'] = self.wan_patch_size
-            from diffusers import AutoencoderKLWan
-            if pretrained:
-                model = AutoencoderKLWan.from_pretrained(folder / 'vae', local_files_only=True, torch_dtype=torch.float32)
-            else:
-                config = meta.get('model_config')
-                if config is None:
-                    config = dict(AutoencoderKLWan.load_config(folder / 'vae', local_files_only=True))
-                    # Upstream video statistics are not valid for random weights.
-                    config['latents_mean'] = [0.] * config['z_dim']
-                    config['latents_std'] = [1.] * config['z_dim']
-                model = AutoencoderKLWan.from_config(config)
-            meta['model_config'] = json.loads(json.dumps(dict(model.config), default=str))
-            # Only encoder weights belong to the policy. Decoder is owned by adaptation objective.
-            self.model = model
-            self.decoder = model.decoder
-            self.post_quant_conv = model.post_quant_conv
-            model.decoder = None
-            model.post_quant_conv = None
-            model._cached_conv_counts['decoder'] = 0
-            # Keep training-only components out of encoder state_dict and policy parameters.
-            decoder, post = self.decoder, self.post_quant_conv
-            del self.decoder, self.post_quant_conv
-            if pretrained or with_decoder:
-                object.__setattr__(self, '_initial_decoder', decoder)
-                object.__setattr__(self, '_initial_post_quant_conv', post)
-            self.embed_dim, self.hw = model.config.z_dim * self.wan_patch_size**2, (224, 224)
-            self.mean, self.std = [.5]*3, [.5]*3
-        else:
-            from transformers import AutoConfig, AutoModel, SiglipVisionConfig, SiglipVisionModel
-            config_dict = meta.get('model_config')
-            if method == 'SigLIP2':
-                # Fixed-resolution SigLIP2 checkpoints use the Siglip architecture;
-                # the separate Siglip2 classes are for NaFlex checkpoints.
-                config = (SiglipVisionConfig(**config_dict) if config_dict else
-                          AutoConfig.from_pretrained(folder, local_files_only=True).vision_config)
-                self.model = (SiglipVisionModel.from_pretrained(folder, local_files_only=True) if pretrained
-                              else SiglipVisionModel(config))
-                self.hw = (224, 224)
-                self.mean, self.std = [.5]*3, [.5]*3
-            else:
-                config = (AutoConfig.for_model(**config_dict) if config_dict else
-                          AutoConfig.from_pretrained(folder, local_files_only=True))
-                self.model = (AutoModel.from_pretrained(folder, local_files_only=True) if pretrained
-                              else AutoModel.from_config(config))
-                if method == 'V-JEPA2':
-                    self.model.predictor = None
-                self.hw = (256, 256) if method == 'V-JEPA2' else (224, 224)
-                self.mean, self.std = [.485, .456, .406], [.229, .224, .225]
-            self.embed_dim = config.hidden_size
-            meta['model_config'] = config.to_dict()
-        self.metadata = dict(meta, pretrained_mode=mode, method=method, size=size,
+        name = canonical_name(mode, method)
+        builder = importlib.import_module(f'encoder.{name}.model').build
+        builder(self, folder, meta, metadata, pretrained, with_decoder, method, size)
+        self.metadata = dict(meta, pretrained_mode=mode, method=public_method, size=public_size,
                              num_frames=self.num_frames, frame_stride=self.frame_stride,
                              image_size=list(self.hw), in_chans=3, color_order='RGB',
                              source_repo=SOURCES[mode, method][1])

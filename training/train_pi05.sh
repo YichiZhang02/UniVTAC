@@ -47,7 +47,7 @@ export SAVE_FREQ=10000
 # Vision-only training: no tactile encoder checkpoint is required.
 export TACTILE_MODE=none
 export TACTILE_INPUT_MODE=rgb_only
-export ENCODER_METHOD=VAE
+export ENCODER_METHOD=RVAE
 export ENCODER_SIZE=S
 
 echo "$POLICY: tactile=$TACTILE_MODE, action=$ACTION_MODE, training=$TRAINING_MODE, task=${TASK:-all}, tasks=${TASKS:-all}, episodes=${EPISODES:-0}, cameras=${CAMERAS:-all}, image_size=$IMAGE_SIZE, GPUs=$CUDA_VISIBLE_DEVICES, global_batch=$BATCH_SIZE, steps=$STEPS, save_freq=$SAVE_FREQ, chunk_size=$CHUNK_SIZE, n_action_steps=$N_ACTION_STEPS"

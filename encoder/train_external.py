@@ -186,7 +186,6 @@ def run(args):
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     saved = torch.load(args.resume, map_location='cpu', weights_only=True) if args.resume else None
-    explicit_init = args.init is not None
     previous_init = saved.get('initialization', 'official') if saved else None
     args.init = args.init or previous_init or 'official'
     if saved:
@@ -194,6 +193,10 @@ def run(args):
                            ('size', args.size), ('input_mode', args.input_mode),
                            ('initialization', args.init)]:
             actual = saved.get(key, 'official' if key == 'initialization' else None)
+            if key in ('method', 'size'):
+                from encoder.catalog import resolve_identity
+                if resolve_identity(args.pretrained_mode, saved['method'], saved['size']) == resolve_identity(args.pretrained_mode, args.method, args.size):
+                    continue
             if actual != value:
                 raise ValueError(f'Resume checkpoint {key} mismatch: {actual} != {value}')
         if 'training_model' not in saved:
@@ -206,7 +209,7 @@ def run(args):
         if args.input_mode in DEPTH_DEFORM_SPECS and saved.get('depth_deform_encoding') != depth_deform_spec(args.input_mode):
             raise ValueError('Resume representation version mismatch')
     encoder = ExternalEncoder(args.pretrained_mode, args.method, args.size, metadata=saved,
-                              pretrained=saved is None and args.init == 'official', with_decoder=True)
+                              pretrained=saved is None and args.init in ('official', 'adapted'), with_decoder=True)
     encoder.metadata['initialization'] = args.init
     out = args.output_dir or (args.resume.parent if args.resume else None) or result_root(args.input_mode, args.pretrained_mode, args.method, args.size, args.init) / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     if distributed:
@@ -218,9 +221,8 @@ def run(args):
     metadata = dict(encoder.metadata, input_mode=args.input_mode, format_version=3)
     if args.input_mode in DEPTH_DEFORM_SPECS:
         metadata['depth_deform_encoding'] = depth_deform_spec(args.input_mode)
-    # Omitted --init preserves legacy tactile-export behavior. Explicit --init
-    # selects actual pretraining for both scratch and official initialization.
-    export = args.export_only or (args.pretrained_mode == 'tactile' and not explicit_init and not saved)
+    # Official exports upstream weights; adapted fine-tunes them on UniVTAC.
+    export = args.export_only or (args.init == 'official' and not saved)
     if export:
         if args.init != 'official' or saved:
             raise ValueError('--export-only requires official initialization without --resume')
@@ -262,14 +264,14 @@ def run(args):
     val_loader = DataLoader(val_subset, shuffle=False, **options)
     if not len(train_loader):
         raise ValueError('Encoder training requires at least one global batch of 64 training anchors')
-    sparsh = args.pretrained_mode == 'tactile' and args.method != 'AnyTouch2'
+    sparsh = args.pretrained_mode == 'tactile' and args.method not in ('AnyTouch2', 'Anytouch2')
     if sparsh:
         from encoder.sparsh_training import SparshTraining
         core = SparshTraining(encoder, args.mask_ratio)
         objective = core.recipe
     else:
         core = VisionAdaptation(encoder, args.mask_ratio, args.kl_weight)
-        objective = 'reconstruction_kl' if args.method == 'Wan2.2-VAE' else 'masked_latent_and_patch_rgb'
+        objective = 'reconstruction_kl' if args.method in ('Wan2.2-VAE', 'Wan22_VAE') else 'masked_latent_and_patch_rgb'
     core = core.to(args.device)
     model = core
     if distributed:
@@ -378,7 +380,7 @@ def run(args):
             raise FloatingPointError('Nonfinite validation loss')
         improved = value < best
         best, stale = min(best, value), 0 if improved else stale+1
-        if args.method == 'Wan2.2-VAE' and args.init == 'scratch':
+        if args.method in ('Wan2.2-VAE', 'Wan22_VAE') and args.init == 'scratch':
             with torch.random.fork_rng(devices=rng_devices):
                 torch.manual_seed(args.seed+200000+rank)
                 calibration = calibrate_wan(encoder, train_loader, args.device, args.calibration_steps, args.input_mode)
@@ -396,7 +398,7 @@ def run(args):
         if rank == 0:
             if improved:
                 save_checkpoint(state, out / 'encoder.pth')
-                if args.method == 'Wan2.2-VAE':
+                if args.method in ('Wan2.2-VAE', 'Wan22_VAE'):
                     save_checkpoint(dict(state, training_model=core.state_dict()), out / 'best.pth')
             if not args.no_training_state:
                 save_checkpoint(dict(state, training_model=core.state_dict(), optimizer=optimizer.state_dict(),
@@ -411,13 +413,13 @@ def run(args):
     return out
 
 
-def main():
+def main(default_method=None, default_mode=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--pretrained-mode', required=True, choices=['tactile', 'vision'])
-    p.add_argument('--method', required=True)
-    p.add_argument('--size', required=True)
-    p.add_argument('--init', choices=['scratch', 'official'],
-                   help='Explicitly pretrain from random or official weights; omitted tactile mode exports official weights')
+    p.add_argument('--pretrained-mode', required=default_mode is None, default=default_mode, choices=['tactile', 'vision'])
+    p.add_argument('--method', required=default_method is None, default=default_method)
+    p.add_argument('--size', default='official', choices=['official'])
+    p.add_argument('--init', choices=['scratch', 'official', 'adapted'],
+                   help='scratch: random pretraining; official: export upstream weights; adapted: fine-tune upstream weights on UniVTAC')
     p.add_argument('--export-only', action='store_true', help='Export official weights without pretraining')
     p.add_argument('--input-mode', choices=INPUT_CHANNELS, default='depth_deform_nonlinear_radial')
     p.add_argument('--data-root', type=Path, default=ROOT / 'resources/data/contact')
@@ -445,13 +447,14 @@ def main():
                    help='Split the fixed global batch of 64 across visible CUDA devices')
     p.add_argument('--no-training-state', action='store_true')
     args = p.parse_args()
+    from encoder.catalog import selection
+    args.pretrained_mode, args.method, args.size, _ = selection(args.pretrained_mode, args.method, args.size, args.init)
     defaults = dict(epochs=5, lr=1e-5, weight_decay=.05, batch_size=64, multi_gpu=False)
     resume_config = torch.load(args.resume, map_location='cpu', weights_only=True).get('training_config', {}) if args.resume else {}
-    requested_init = args.init or resume_config.get('init', 'official')
-    pretraining = args.pretrained_mode == 'tactile' or requested_init == 'scratch'
-    config_path = args.config or ROOT / ('encoder/external_pretraining.yml' if pretraining else 'encoder/vision_config.yml')
+    config_path = args.config or ROOT / 'encoder' / args.method / 'config.yml'
     if config_path.exists():
-        defaults.update(yaml.safe_load(config_path.read_text()).get(args.method, {}))
+        settings = yaml.safe_load(config_path.read_text())
+        defaults.update(settings.get(args.method, settings))
     if args.resume:
         defaults.update({key: resume_config[key] for key in defaults if key in resume_config})
     for key, value in defaults.items():
@@ -462,7 +465,7 @@ def main():
     if args.epochs < 1 or args.batch_size < 1 or args.samples < 2:
         p.error('epochs/batch size must be positive and samples must be >=2')
     if args.mask_ratio is None:
-        args.mask_ratio = resume_config.get('mask_ratio', .75 if args.pretrained_mode == 'tactile' and args.method == 'MAE' else .5)
+        args.mask_ratio = resume_config.get('mask_ratio', .75 if args.pretrained_mode == 'tactile' and args.method in ('MAE', 'Sparsh_mae') else .5)
     if args.kl_weight is None:
         args.kl_weight = resume_config.get('kl_weight', 1e-6)
     if args.calibration_steps is None:

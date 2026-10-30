@@ -29,8 +29,6 @@ class TactileEncoder(nn.Module):
         size = state.get("size")
         self.pretrained_mode = state.get('pretrained_mode', 'univtac')
         config.tactile_encoder_pretrained_mode = self.pretrained_mode
-        if self.pretrained_mode == 'univtac' and method not in {"ResNet", "VAE", "MAE", "DINOv2", "I-JEPA", "V-JEPA"}:
-            raise ValueError(f"Unsupported UniVTAC tactile checkpoint method: {method}")
         if state.get("input_mode") != config.tactile_input_mode:
             raise ValueError(f"Checkpoint input {state.get('input_mode')} != {config.tactile_input_mode}")
         from encoder.linear_depth_deform import require_depth_deform_encoding
@@ -41,29 +39,18 @@ class TactileEncoder(nn.Module):
         if self.pretrained_mode != 'univtac':
             from encoder.external import ExternalEncoder
             self.backbone = ExternalEncoder(self.pretrained_mode, method, size, metadata=state, pretrained=False)
-        elif method == "ResNet":
-            from ResNet.model import ResNetCNNEncoder
-            self.backbone = ResNetCNNEncoder(size, state["in_chans"])
-        elif method == "VAE":
-            from VAE.model import VAEEncoder
-            self.backbone = VAEEncoder(size, in_chans=state["in_chans"])
-        elif method == "I-JEPA":
-            self.backbone = importlib.import_module("I-JEPA.model").IJEPAEncoder(
-                size, image_size=state["image_size"], in_chans=state["in_chans"]
-            )
-        elif method == "V-JEPA":
-            self.backbone = importlib.import_module("V-JEPA.model").VJEPAEncoder(
-                size, in_chans=state["in_chans"], num_frames=state.get('num_frames', 1)
-            )
         else:
-            from vit_encoder import TactileViT
-            self.backbone = TactileViT(size, image_size=state["image_size"], in_chans=state["in_chans"])
+            from encoder.factory import local_encoder
+            from encoder.catalog import canonical_name
+            method = canonical_name('univtac', method)
+            self.backbone = local_encoder(method, size, state['in_chans'],
+                num_frames=state.get('num_frames', 1), image_size=state.get('image_size', 224))
         if "encoder" in state:
             self.backbone.load_state_dict(state["encoder"], strict=True)
-        wan_optimization = getattr(config, 'wan_training_optimization', 'reference')
+        wan_optimization = getattr(config, 'wan_training_optimization', 'compiled')
         if wan_optimization not in ('reference', 'compiled'):
             raise ValueError(f'Unknown Wan training optimization: {wan_optimization}')
-        if method == 'Wan2.2-VAE' and wan_optimization == 'compiled':
+        if method in ('Wan2.2-VAE', 'Wan22_VAE') and wan_optimization == 'compiled':
             from encoder.wan_training_fast import enable_wan_training_fast
             enable_wan_training_fast(self.backbone.model)
             torch.backends.cudnn.benchmark = True
@@ -120,7 +107,7 @@ class TactileEncoder(nn.Module):
             x = net.maxpool(net.relu(net.bn1(net.conv1(x))))
             x = net.layer4(net.layer3(net.layer2(net.layer1(x))))
             return x.flatten(2).transpose(1, 2)
-        if self.method == "VAE":
+        if self.method in ("VAE", "RVAE", "SD-VAE"):
             return self.backbone.latent_tokens(x)
         if self.method in {"MAE", "DINOv2"}:
             return self.backbone.tokens(x)

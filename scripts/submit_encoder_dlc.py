@@ -14,13 +14,17 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from encoder.catalog import canonical_name
+
 PYTHON = '/mnt/yichi_data/miniconda3/envs/univtac/bin/python'
-MODELS = {'MAE': ('tactile', 'S'), 'DINOv2': ('tactile', 'B'),
-          'I-JEPA': ('tactile', 'S'), 'V-JEPA': ('tactile', 'S'),
-          'Wan2.2-VAE': ('vision', 'B')}
+MODELS = {'Sparsh_mae': ('tactile', 'official'), 'Sparsh_DINOv2': ('tactile', 'official'),
+          'Sparsh_IJEPA': ('tactile', 'official'), 'Sparsh_VJEPA': ('tactile', 'official'),
+          'Wan22_VAE': ('vision', 'official')}
 COMMON = [
     '--data_sources=d-lu3fmaylj6r0n6hkms:v1:/mnt/yichi_data/',
     '--resource_id=quota3ya3nugiuc6', '--vpc_id=vpc-0jlibv5lchq2ljpnl6p4i',
@@ -86,10 +90,10 @@ def prepare(args, ledger):
     records = []
     previous = {}
     for path in ([args.resume_ledger] if args.resume_ledger else []) + args.additional_resume_ledger:
-        previous.update({r['method']: r for r in json.loads(path.read_text())})
+        previous.update({canonical_name('vision' if r['method'] in ('Wan2.2-VAE', 'Wan22_VAE') else 'tactile', r['method']): r for r in json.loads(path.read_text())})
     for method in args.methods:
         mode, size = MODELS[method]
-        gpus = args.wan_gpus if method == 'Wan2.2-VAE' else args.gpus
+        gpus = args.wan_gpus if method == 'Wan22_VAE' else args.gpus
         key = method.lower().replace('.', '').replace('-', '')
         output = ROOT / 'encoder_results' / args.input / mode / method / size / args.init / f'{stamp}_dlc_{args.init}'
         resume_args, resume_info = [], {}
@@ -159,8 +163,8 @@ def main():
     parser.add_argument('--epochs', type=int, help='Total epoch limit, including completed epochs when resuming')
     parser.add_argument('--early-stop-patience', type=int, help='Unimproved validation epochs before early stopping')
     parser.add_argument('--preprocessing', choices=['auto', 'cpu', 'cuda'], default='auto')
-    parser.add_argument('--methods', nargs='+', choices=MODELS, default=list(MODELS))
-    parser.add_argument('--init', choices=['scratch', 'official'], default='scratch')
+    parser.add_argument('--methods', nargs='+', type=lambda name: canonical_name('vision' if name in ('Wan22_VAE', 'Wan2.2-VAE') else 'tactile', name), choices=MODELS, default=list(MODELS))
+    parser.add_argument('--init', choices=['scratch', 'official', 'adapted'], default='scratch')
     parser.add_argument('--input', default='depth_deform_nonlinear_radial')
     parser.add_argument('--data-root', type=Path, default=ROOT / 'resources/data/contact')
     parser.add_argument('--samples', type=int, default=100000)

@@ -179,43 +179,35 @@ class TactileBackbone(nn.Module):
 
 
 class ViTTactileBackbone(nn.Module):
-    """Load a tactile ViT checkpoint into ACT."""
+    """Load a local transformer or SD-VAE encoder checkpoint into ACT."""
 
     def __init__(self, method, size, ckpt, position_embedding, tactile_type='cls', input_mode='marker_rgb', state=None):
         super().__init__()
         if state is None and (not ckpt or not Path(ckpt).is_file()):
             raise FileNotFoundError(f'ViT tactile checkpoint not found: {ckpt}')
-        if method not in ('VAE', 'MAE', 'DINOv2', 'I-JEPA', 'V-JEPA'):
+        from encoder.catalog import canonical_name
+        method = canonical_name('univtac', method)
+        if method not in ('RVAE', 'RAE', 'SD-VAE', 'MAE', 'DINOv2', 'I-JEPA', 'V-JEPA'):
             raise ValueError(f'Unknown tactile encoder method: {method}')
         encoder_dir = Path(__file__).resolve().parents[4] / 'encoder'
         if str(encoder_dir) not in sys.path:
             sys.path.insert(0, str(encoder_dir))
-        from vit_encoder import TactileViT
-        from VAE.model import VAEEncoder
-        from importlib import import_module
-        IJEPAEncoder = import_module('I-JEPA.model').IJEPAEncoder
-        VJEPAEncoder = import_module('V-JEPA.model').VJEPAEncoder
+        from encoder.factory import local_encoder
 
         if state is None:
             state = torch.load(ckpt, map_location='cpu', weights_only=True)
-        if state.get('method') != method or state.get('size') != size:
+        if canonical_name('univtac', state.get('method')) != method or state.get('size') != size:
             raise ValueError(f'Checkpoint is {state.get("method")}/ViT-{state.get("size")}, expected {method}/ViT-{size}')
         if input_mode in ('rgb_only', 'marker_rgb'):
             from encoder.image_io import require_rgb_model
             require_rgb_model(state)
         if state.get('input_mode', 'marker_rgb') != input_mode:
             raise ValueError(f'Checkpoint input is {state.get("input_mode", "marker_rgb")}, expected {input_mode}')
-        if method == 'VAE' and 'encoder' in state and not any(key.startswith('downsample.') for key in state['encoder']):
+        if method == 'RVAE' and 'encoder' in state and not any(key.startswith('downsample.') for key in state['encoder']):
             raise ValueError('VAE checkpoint uses the old average-pooling encoder; retrain VAE with learned downsampling')
         channels = state.get('in_chans', 3)
-        if method == 'VAE':
-            self.backbone = VAEEncoder(size, in_chans=channels)
-        elif method == 'I-JEPA':
-            self.backbone = IJEPAEncoder(size, in_chans=channels)
-        elif method == 'V-JEPA':
-            self.backbone = VJEPAEncoder(size, in_chans=channels, num_frames=state.get('num_frames', 1))
-        else:
-            self.backbone = TactileViT(size, image_size=state['image_size'], in_chans=channels)
+        self.backbone = local_encoder(method, size, channels,
+            num_frames=state.get('num_frames', 1), image_size=state.get('image_size', 224))
         if 'encoder' in state:
             self.backbone.load_state_dict(state['encoder'], strict=True)
         self.num_channels = self.backbone.embed_dim
@@ -224,14 +216,14 @@ class ViTTactileBackbone(nn.Module):
         self.position_embedding = position_embedding if tactile_type == 'full' else nn.Embedding(1, 512)
         if tactile_type == 'full' and method in ('MAE', 'DINOv2'):
             self.cls_position = nn.Embedding(1, 512)
-        print(f'Loaded {method} ViT-{size} tactile encoder from {ckpt}')
+        print(f'Loaded {method}-{size} tactile encoder from {ckpt}')
 
     @pool_act_tactile_outputs
     def forward(self, x):
         if self.tactile_type == 'full':
-            if self.method == 'VAE':
+            if self.method in ('VAE', 'RVAE', 'SD-VAE'):
                 tokens = self.backbone.latent_tokens(x)
-                height, width = 7, 7
+                height = width = 28 if self.method == 'SD-VAE' else 7
             elif self.method in ('MAE', 'DINOv2'):
                 tokens = self.backbone.tokens(x)
                 feat = tokens.transpose(1, 2).unsqueeze(2)
@@ -254,7 +246,7 @@ class ViTTactileBackbone(nn.Module):
 
 class RegisteredTactileBackbone(nn.Module):
     """External / temporal encoder bridge; parameters live inside the ACT checkpoint."""
-    def __init__(self, state, position_embedding, tactile_type):
+    def __init__(self, state, position_embedding, tactile_type, wan_training_optimization='compiled'):
         super().__init__()
         encoder_dir = Path(__file__).resolve().parents[4] / 'encoder'
         if str(encoder_dir) not in sys.path:
@@ -269,6 +261,13 @@ class RegisteredTactileBackbone(nn.Module):
                                              metadata=state, pretrained=False)
         if 'encoder' in state:
             self.backbone.load_state_dict(state['encoder'], strict=True)
+        if state['method'] in ('Wan2.2-VAE', 'Wan22_VAE'):
+            if wan_training_optimization not in ('reference', 'compiled'):
+                raise ValueError(f'Unknown Wan training optimization: {wan_training_optimization}')
+            if wan_training_optimization == 'compiled':
+                from encoder.Wan22_VAE.wan_training_fast import enable_wan_training_fast
+                enable_wan_training_fast(self.backbone.model)
+                torch.backends.cudnn.benchmark = True
         self.num_channels = self.backbone.embed_dim
         self.tactile_type = tactile_type
         self.position_embedding = position_embedding
@@ -336,7 +335,8 @@ def build_tactile_backbone(args):
         state = torch.load(args.tactile_ckpt, map_location='cpu', weights_only=True)
     if state and (state.get('pretrained_mode', 'univtac') != 'univtac' or
                   (method == 'V-JEPA' and state.get('num_frames', 1) > 1)):
-        backbone = RegisteredTactileBackbone(state, position_embedding, tactile_type)
+        backbone = RegisteredTactileBackbone(state, position_embedding, tactile_type,
+            getattr(args, 'wan_training_optimization', 'compiled'))
         return configure_tactile_pooling(backbone, args, method, state)
     legacy_resnet = method == 'ResNet' and (state is None or ('encoder' not in state and 'method' not in state))
     if legacy_resnet:

@@ -67,7 +67,7 @@ hf download google/paligemma-3b-pt-224 \
 
 ### Encoder
 
-- 方法（`--method`）：`ResNet / VAE / MAE / DINOv2 / I-JEPA / V-JEPA`。
+- 方法（`--method`）：`ResNet / RVAE / RAE / SD-VAE / MAE / DINOv2 / I-JEPA / V-JEPA`。
 - 尺寸（`--size`）：`S / B`，默认 `S`。
 - 触觉表示（`--input`）：`marker_only / rgb_only / marker_rgb / depth_deform`，默认 `marker_rgb`。
 
@@ -97,7 +97,7 @@ CUDA_VISIBLE_DEVICES=0 bash train_encoder.sh \
 CUDA_VISIBLE_DEVICES=0,1 NUM_PROCESSES=2 \
 POLICY=starvla_groot TRAINING_MODE=multi_task TASKS='' EPISODES=0 CAMERAS=all \
 TACTILE_MODE=encode TACTILE_INPUT_MODE=marker_rgb \
-TACTILE_TYPE=full TACTILE_INSERT_LOCATION=encoder ENCODER_METHOD=VAE ENCODER_SIZE=S \
+TACTILE_TYPE=full TACTILE_INSERT_LOCATION=encoder ENCODER_METHOD=RVAE ENCODER_SIZE=S \
 STEPS=100_000 BATCH_SIZE=32 CHUNK_SIZE=32 SAVE_FREQ=10_000 \
 bash train_policy.sh
 ```

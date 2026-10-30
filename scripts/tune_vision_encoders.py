@@ -32,7 +32,7 @@ def main():
                   search='lr={1e-5,3e-5,1e-4} at wd=.05, then wd=.01 at winning lr', models={})
 
     def tune(method, gpu):
-        size = SOURCES['vision', method][0]
+        size = 'official'
         folder = source_dir('vision', method)
         if not list(folder.rglob('*.safetensors')):
             return method, dict(status='blocked', reason=f'Official weights missing: {folder}')
@@ -43,7 +43,7 @@ def main():
             trial_id = f'pilot_{stamp}_lr{lr:g}_wd{wd:g}'
             output = result_root('depth_deform_nonlinear_radial', 'vision', method, size) / trial_id
             cmd = [sys.executable, '-u', str(ROOT / 'encoder/train_external.py'), '--pretrained-mode', 'vision',
-                   '--method', method, '--size', size, '--input-mode', 'depth_deform_nonlinear_radial',
+                   '--method', method, '--size', size, '--init', 'adapted', '--input-mode', 'depth_deform_nonlinear_radial',
                    '--output-dir', str(output), '--lr', str(lr), '--weight-decay', str(wd),
                    '--batch-size', str(batch), '--samples', str(args.samples), '--epochs', str(args.epochs),
                    '--max-steps', str(args.max_steps), '--max-val-steps', str(args.max_val_steps),
@@ -118,6 +118,10 @@ def main():
         temporary = config_path.with_suffix('.yml.tmp')
         temporary.write_text('# Shared across representations; completed radial searches update model entries.\n' + yaml.safe_dump(previous, sort_keys=False))
         os.replace(temporary, config_path)
+        from encoder.catalog import canonical_name
+        for method, settings in selected.items():
+            model_config = ROOT / 'encoder' / canonical_name('vision', method) / 'config.yml'
+            model_config.write_text(yaml.safe_dump(settings, sort_keys=False))
     print(f'Report: {root / "report.json"}', flush=True)
     if len(selected) != len(args.methods):
         sys.exit(1)

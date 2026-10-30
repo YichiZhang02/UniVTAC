@@ -1,4 +1,4 @@
-"""Train selected supported depth/deform VAE-S modes on available GPUs."""
+"""Train selected supported depth/deform RVAE-S modes on available GPUs."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -15,14 +15,14 @@ MODES = tuple(f'depth_deform_{n}' for n in (20, 80, 160, 240)) + (
 
 
 def train(mode, gpu, run_id, epochs, patience):
-    output = ROOT / 'encoder_results' / mode / 'univtac' / 'VAE' / 'S' / run_id
+    output = ROOT / 'encoder_results' / mode / 'univtac' / 'RVAE' / 'S' / run_id
     output.mkdir(parents=True, exist_ok=False)
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), PYTHON_BIN=sys.executable)
-    command = ['bash', str(ROOT / 'train_encoder.sh'), '--method', 'VAE',
+    command = ['bash', str(ROOT / 'train_encoder.sh'), '--method', 'RVAE',
                '--size', 'S', '--input', mode, '--', '--epochs', str(epochs),
                '--early-stop-patience', str(patience), '--checkpoint-metric', 'val_loss',
                '--device', 'cuda', '--output-dir', str(output)]
-    status = dict(method='VAE', size='S', input_mode=mode, gpu=gpu,
+    status = dict(method='RVAE', size='S', input_mode=mode, gpu=gpu,
                   state='running', output=str(output), command=command,
                   epochs=epochs, early_stop_patience=patience)
     started = time.time()

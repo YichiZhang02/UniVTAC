@@ -25,6 +25,9 @@ if __package__:
 else:
     from submit_encoder_dlc import COMMON, PYTHON, ROOT, remote
 
+sys.path.insert(0, str(ROOT))
+from encoder.catalog import canonical_name, resolve_identity
+
 DEFAULT_LEDGER = ROOT / 'encoder_results/dlc_encoder_gpu_tps_5epochs_20261026/submissions.json'
 DEFAULT_STATE = ROOT / 'policy_results/encoder_to_starvla_20261026'
 RESOURCES = ['--worker_gpu=4', '--worker_cpu=16', '--worker_memory=128Gi', '--worker_shared_memory=32Gi']
@@ -65,7 +68,7 @@ def parse_blocks(path):
         if method in blocks:
             raise ValueError(f'Duplicate encoder block: {method}')
         blocks[method] = environment
-    if set(blocks) != {'MAE', 'DINOv2', 'I-JEPA', 'V-JEPA', 'Wan2.2-VAE'}:
+    if {canonical_name(env['ENCODER_PRETRAINED_MODE'], method) for method, env in blocks.items()} != {'Sparsh_mae', 'Sparsh_DINOv2', 'Sparsh_IJEPA', 'Sparsh_VJEPA', 'Wan22_VAE'}:
         raise ValueError('Expected the four Sparsh models and Wan2.2-VAE in 2.sh')
     return blocks
 
@@ -86,7 +89,12 @@ print(json.dumps({k:s.get(k) for k in keys}))
     expected = {'initialization': 'scratch', 'pretrained_mode': record['environment']['ENCODER_PRETRAINED_MODE'],
                 'method': record['method'], 'size': record['environment']['ENCODER_SIZE'],
                 'input_mode': record['environment']['TACTILE_INPUT_MODE'], 'color_order': 'RGB'}
+    mode = expected['pretrained_mode']
+    if resolve_identity(mode, metadata.get('method'), metadata.get('size')) != resolve_identity(mode, expected['method'], expected['size']):
+        raise ValueError(f'{path}: encoder identity does not match requested model')
     for key, value in expected.items():
+        if key in ('method', 'size'):
+            continue
         if metadata.get(key) != value:
             raise ValueError(f'{path}: {key}={metadata.get(key)!r}, expected {value!r}')
     return metadata
@@ -131,7 +139,8 @@ class Monitor:
         records = []
         stamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
         for method, environment in blocks.items():
-            encoder = encoders[method]
+            name = canonical_name(environment['ENCODER_PRETRAINED_MODE'], method)
+            encoder = encoders.get(method) or encoders[name]
             source = Path(environment['ENCODER_CKPT']).resolve()
             if source != (Path(encoder['output_dir']) / 'encoder.pth').resolve():
                 raise ValueError(f'{method}: 2.sh checkpoint does not match the monitored encoder job')

@@ -89,6 +89,7 @@ class JointActionTests(unittest.TestCase):
             args = SimpleNamespace(policy=kind, image_size=224, tactile_mode="none",
                                    tactile_input_mode="rgb_only", tactile_type="cls", encoder_ckpt=None,
                                    tactile_insert_location="decoder", action_mode="relative_joint",
+                                   encoder_pretrained_mode='univtac', tactile_num_frames=1, tactile_frame_stride=1,
                                    device="cpu", chunk_size=32, n_action_steps=30)
             base = yaml.safe_load((ROOT / "policy" / kind / "base_config.yml").read_text())
             config = make_config(args, base, ["observation.images.cam_high"], [])

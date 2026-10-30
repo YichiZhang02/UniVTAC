@@ -16,8 +16,8 @@ INIT=""
 PREPROCESSING="${TACTILE_PREPROCESSING:-auto}"
 NUM_PROCESSES="${NUM_PROCESSES:-1}"
 usage() {
-    echo "Usage: $0 [--init scratch|official] [--pretrained-mode univtac|tactile|vision] [--method METHOD] [--size S|B|L] [--input INPUT_MODE] [--data-root DIR] [--config FILE] [-- additional train.py options]"
-    echo "univtac: ResNet VAE MAE DINOv2 I-JEPA V-JEPA; tactile: MAE DINOv2 I-JEPA V-JEPA AnyTouch2; vision: DINOv3 SigLIP2 V-JEPA2 Wan2.2-VAE"
+    echo "Usage: $0 [--init scratch|official|adapted] [--pretrained-mode univtac|tactile|vision] [--method METHOD] [--size S|B|official] [--input INPUT_MODE] [--data-root DIR] [--config FILE] [-- additional train.py options]"
+    echo "scratch S/B: ResNet RVAE RAE SD-VAE MAE DINOv2 I-JEPA V-JEPA; fixed official size: Sparsh_mae Sparsh_DINOv2 Sparsh_IJEPA Sparsh_VJEPA Wan22_VAE Anytouch2"
 }
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -34,9 +34,8 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
-if [[ -n "$INIT" && "$INIT" != scratch && "$INIT" != official ]]; then
-    echo "--init must be scratch or official" >&2; exit 2
-fi
+IDENTITY="$(PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'import sys; from encoder.catalog import selection; print(*selection(*[v or None for v in sys.argv[1:]]))' "$PRETRAINED_MODE" "$METHOD" "$SIZE" "$INIT")"
+read -r PRETRAINED_MODE METHOD SIZE INIT <<< "$IDENTITY"
 case "$PREPROCESSING" in auto|cpu|cuda) ;; *) echo "Invalid tactile preprocessing: $PREPROCESSING" >&2; exit 2 ;; esac
 if [[ ! "$NUM_PROCESSES" =~ ^[1-9][0-9]*$ ]]; then
     echo "NUM_PROCESSES must be a positive integer" >&2; exit 2
@@ -47,16 +46,9 @@ fi
 if [[ "$PRETRAINED_MODE" == univtac && "$NUM_PROCESSES" != 1 ]]; then
     echo "NUM_PROCESSES is supported for external encoders; local encoders use --multi-gpu" >&2; exit 2
 fi
-if [[ -z "$SIZE" ]]; then
-    SIZE="$(PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'import sys; from encoder.pretrained_registry import default_size; print(default_size(*sys.argv[1:]))' "$PRETRAINED_MODE" "$METHOD")"
-fi
-PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'import sys; from encoder.pretrained_registry import validate_identity; validate_identity(*sys.argv[1:])' "$PRETRAINED_MODE" "$METHOD" "$SIZE"
 case "$INPUT" in marker_only|rgb_only|marker_rgb|depth_deform_20|depth_deform_80|depth_deform_160|depth_deform_240|depth_deform_nonlinear|depth_deform_nonlinear_radial) ;; *) echo "Invalid input: $INPUT" >&2; exit 2 ;; esac
-if [[ "$PRETRAINED_MODE" == univtac ]]; then CONFIG="${CONFIG:-$ROOT/encoder/$METHOD/config.yml}"; fi
-RUN_DIR="$ROOT/encoder_results/$INPUT/$PRETRAINED_MODE/$METHOD/$SIZE/$(date +%Y%m%d-%H%M%S-%6N)"
-if [[ "$PRETRAINED_MODE" != univtac ]]; then
-    RUN_DIR="$ROOT/encoder_results/$INPUT/$PRETRAINED_MODE/$METHOD/$SIZE/${INIT:-official}/$(date +%Y%m%d-%H%M%S-%6N)"
-fi
+CONFIG="${CONFIG:-$ROOT/encoder/$METHOD/config.yml}"
+RUN_DIR="$ROOT/encoder_results/$INPUT/$PRETRAINED_MODE/$METHOD/$SIZE/$INIT/$(date +%Y%m%d-%H%M%S-%6N)"
 for ((i=0; i<${#EXTRA[@]}; i++)); do
     if [[ "${EXTRA[i]}" == --resume && $((i + 1)) -lt ${#EXTRA[@]} ]]; then
         RUN_DIR="$(dirname "${EXTRA[i+1]}")"
@@ -82,7 +74,7 @@ done
     if [[ "$PRETRAINED_MODE" == univtac && "$METHOD" == V-JEPA ]]; then DISPLAY_METHOD='V-JEPA*'; fi
     echo "Model=$DISPLAY_METHOD size=$SIZE input=$INPUT batch_size=64 config=$CONFIG output=$RUN_DIR"
     if [[ "$PRETRAINED_MODE" == univtac ]]; then
-        "$PYTHON_BIN" -u "$ROOT/encoder/$METHOD/train.py" --size "$SIZE" --input-mode "$INPUT" \
+        "$PYTHON_BIN" -u "$ROOT/encoder/$METHOD/train.py" --init "$INIT" --size "$SIZE" --input-mode "$INPUT" \
             --data-root "$DATA_ROOT" --config "$CONFIG" --output-dir "$RUN_DIR" --tactile-preprocessing "$PREPROCESSING" "${EXTRA[@]}"
     else
         CONFIG_ARGS=()

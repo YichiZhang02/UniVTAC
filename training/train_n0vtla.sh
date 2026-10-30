@@ -47,7 +47,7 @@ export SAVE_FREQ=10000
 # Vision-only training: no tactile encoder checkpoint is required.
 export TACTILE_MODE=none
 export TACTILE_INPUT_MODE=rgb_only
-export ENCODER_METHOD=VAE
+export ENCODER_METHOD=RVAE
 export ENCODER_SIZE=S
 
 # N0 pretrained weights and PaliGemma tokenizer.

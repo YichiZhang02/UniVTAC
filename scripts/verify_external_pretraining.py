@@ -15,13 +15,13 @@ from encoder.sparsh_training import SparshTraining
 from policy.vla_common.tactile_encode import TactileEncoder
 p=argparse.ArgumentParser(); p.add_argument('--method',required=True); p.add_argument('--init',required=True); args=p.parse_args()
 torch.set_num_threads(4); torch.manual_seed(42)
-mode='vision' if args.method in ('Wan2.2-VAE','DINOv3','SigLIP2','V-JEPA2') else 'tactile'
-size={'DINOv2':'B','Wan2.2-VAE':'B','AnyTouch2':'B','SigLIP2':'B','V-JEPA2':'L'}.get(args.method,'S')
-enc=ExternalEncoder(mode,args.method,size,pretrained=args.init=='official',with_decoder=True)
+from encoder.catalog import selection
+mode, args.method, size, args.init = selection('univtac', args.method, None, args.init)
+enc=ExternalEncoder(mode,args.method,size,pretrained=args.init in ('official','adapted'),with_decoder=True)
 meta=dict(enc.metadata,input_mode='depth_deform_nonlinear_radial',initialization=args.init)
 from encoder.linear_depth_deform import depth_deform_spec
 meta['depth_deform_encoding']=depth_deform_spec(meta['input_mode'])
-core=(SparshTraining(enc) if mode=='tactile' and args.method!='AnyTouch2' else VisionAdaptation(enc)).cuda()
+core=(SparshTraining(enc) if mode=='tactile' and args.method!='Anytouch2' else VisionAdaptation(enc)).cuda()
 x=torch.rand(2,enc.num_frames,3,224,224,device='cuda',requires_grad=True) if enc.num_frames>1 else torch.rand(2,3,224,224,device='cuda',requires_grad=True)
 opt=torch.optim.AdamW((p for p in core.parameters() if p.requires_grad),lr=1e-5)
 before=next(enc.model.parameters()).detach().clone()

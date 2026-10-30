@@ -11,7 +11,7 @@ import random
 import sys
 import time
 import traceback
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from pathlib import Path
 
 import cv2
@@ -218,7 +218,9 @@ class UniVTACDataset(Dataset):
     def __init__(self, files_by_task, *, cameras, tactile_mode, tactile_input_mode,
                  chunk_size, stats, policy, image_size, action_mode="absolute_joint",
                  tactile_num_frames=1, tactile_frame_stride=1, tactile_pretrained_mode='univtac',
-                 tactile_background_offset=.5, tactile_preprocessing='cpu'):
+                 tactile_background_offset=.5, tactile_preprocessing='cpu', max_open_files=32):
+        if not isinstance(max_open_files, int) or max_open_files < 1:
+            raise ValueError('max_open_files must be a positive integer')
         self.rows = []
         self.task_counts = defaultdict(int)
         self.cameras = cameras
@@ -235,7 +237,11 @@ class UniVTACDataset(Dataset):
         self.tactile_pretrained_mode = tactile_pretrained_mode
         self.tactile_background_offset = tactile_background_offset
         self.tactile_preprocessing = tactile_preprocessing
-        self._files = {}
+        # A persistent worker visits the whole shuffled dataset. Retaining every
+        # HDF5 handle also retains each file's internal caches, multiplied by
+        # all workers on every DDP rank. Bound handles and their RGB baselines.
+        self.max_open_files = max_open_files
+        self._files = OrderedDict()
         for task, paths in files_by_task.items():
             for path in paths:
                 with h5py.File(path, "r") as f:
@@ -256,14 +262,21 @@ class UniVTACDataset(Dataset):
 
     def __getstate__(self):
         state = self.__dict__.copy()
-        state["_files"] = {}
+        state["_files"] = OrderedDict()
         state["_baselines"] = {}
         return state
 
     def _file(self, path):
-        if path not in self._files:
-            self._files[path] = h5py.File(path, "r")
-        return self._files[path]
+        handle = self._files.pop(path, None)
+        if handle is None:
+            if len(self._files) >= self.max_open_files:
+                old_path, old_handle = self._files.popitem(last=False)
+                old_handle.close()
+                for side in ('left', 'right'):
+                    self._baselines.pop((old_path, side), None)
+            handle = h5py.File(path, "r")
+        self._files[path] = handle
+        return handle
 
     def _norm(self, x, name):
         s = self.stats[name]
@@ -368,7 +381,7 @@ def make_config(args, base, camera_keys, tactile_keys):
                   tactile_encoder_pretrained_mode=args.encoder_pretrained_mode,
                   tactile_num_frames=args.tactile_num_frames, tactile_frame_offset=args.tactile_frame_stride,
                   freeze_tactile_encoder=False,
-                  wan_training_optimization=getattr(args, 'wan_training_optimization', 'reference'),
+                  wan_training_optimization=getattr(args, 'wan_training_optimization', 'compiled'),
                   tactile_encoder_path=str(args.encoder_ckpt) if args.tactile_mode == "encode" else None,
                   tactile_insert_location=args.tactile_insert_location,
                   state_mode="absolute_joint", action_mode=args.action_mode, action_gap=1,
@@ -392,25 +405,23 @@ from policy.pi05.tokenization import make_pi_tokens
 
 
 def run(args):
-    if getattr(args, 'wan_training_optimization', 'reference') != 'reference' and (
-            args.policy not in ('starvla_groot', 'starvla_pi')
-            or args.tactile_mode != 'encode' or args.encoder_method != 'Wan2.2-VAE'):
-        raise ValueError('Compiled Wan training requires StarVLA with a Wan2.2-VAE tactile encoder')
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if args.encoder_size is None:
-        from encoder.pretrained_registry import default_size
-        args.encoder_size = default_size(args.encoder_pretrained_mode, args.encoder_method)
+    if args.tactile_mode == 'encode':
+        from encoder.catalog import selection
+        args.encoder_pretrained_mode, args.encoder_method, args.encoder_size, _ = selection(
+            args.encoder_pretrained_mode, args.encoder_method, args.encoder_size,
+            getattr(args, 'encoder_pretrain_init', None))
     args.tactile_num_frames, args.tactile_frame_stride = 1, 1
     if args.tactile_mode == 'encode':
         from encoder.pretrained_registry import validate_identity
         validate_identity(args.encoder_pretrained_mode, args.encoder_method, args.encoder_size)
         requested_init = getattr(args, 'encoder_pretrain_init', None)
-        if not args.encoder_ckpt and requested_init == 'scratch':
-            raise ValueError('scratch pretraining requires an explicit trained encoder checkpoint; official fallback is disabled')
+        if not args.encoder_ckpt and requested_init in ('scratch', 'adapted'):
+            raise ValueError(f'{requested_init} requires an explicit trained encoder checkpoint')
         if not args.encoder_ckpt and (args.encoder_pretrained_mode == 'tactile' or
-                                     (args.encoder_pretrained_mode == 'vision' and args.encoder_method == 'Wan2.2-VAE')):
+                                     (args.encoder_pretrained_mode == 'vision' and args.encoder_method in ('Wan2.2-VAE', 'Wan22_VAE'))):
             # Export once on rank zero. No download or random fallback during policy restore.
             paths = [None]
             if args.rank == 0:
@@ -426,7 +437,11 @@ def run(args):
         args.encoder_pretrain_init = require_initialization(encoder_state, requested_init)
         if encoder_state.get('pretrained_mode', 'univtac') != args.encoder_pretrained_mode:
             raise ValueError('Encoder checkpoint pretrained_mode does not match requested mode')
-        if encoder_state.get('method', args.encoder_method) != args.encoder_method or encoder_state.get('size', args.encoder_size) != args.encoder_size:
+        from encoder.catalog import resolve_identity
+        actual_identity = resolve_identity(args.encoder_pretrained_mode,
+            encoder_state.get('method', args.encoder_method), encoder_state.get('size', args.encoder_size))
+        expected_identity = resolve_identity(args.encoder_pretrained_mode, args.encoder_method, args.encoder_size)
+        if actual_identity != expected_identity:
             raise ValueError('Encoder checkpoint method/size does not match requested model')
         args.tactile_num_frames = encoder_state.get('num_frames', 1)
         args.tactile_frame_stride = encoder_state.get('frame_stride', 1)
@@ -470,7 +485,7 @@ def run(args):
                                            tactile_num_frames=args.tactile_num_frames,
                                            tactile_frame_stride=args.tactile_frame_stride,
                                            tactile_pretrained_mode=args.encoder_pretrained_mode,
-                                           tactile_background_offset=130/255 if args.encoder_method == 'AnyTouch2' else .5,
+                                           tactile_background_offset=130/255 if args.encoder_method in ('AnyTouch2', 'Anytouch2') else .5,
                                            tactile_preprocessing=args.tactile_preprocessing)
     train_ds, val_ds = make_ds(train_files), make_ds(val_files)
     weights = [1.0 / train_ds.task_counts[task] for task, _, _ in train_ds.rows]
@@ -483,6 +498,10 @@ def run(args):
         sampler = WeightedRandomSampler(weights, len(train_ds), replacement=True) if args.training_mode == "multi_task" else None
     # Spawn avoids forking after CUDA/NCCL has been initialized.
     loader_options = {"multiprocessing_context": "spawn"} if args.workers else {}
+    if args.workers and train_ds.tactile_num_frames > 1 and train_ds.tactile_input_mode in ('rgb_only', 'marker_rgb'):
+        # Temporal RGB batches contain four frames per sensor. One outstanding
+        # batch per worker bounds queued tensors and their pinned-memory copies.
+        loader_options["prefetch_factor"] = 1
     if args.workers and args.policy in ("starvla_groot", "starvla_pi"):
         loader_options["persistent_workers"] = True
     if use_cuda_tps:
@@ -511,6 +530,7 @@ def run(args):
                     tactile_ckpt=str(args.encoder_ckpt) if args.tactile_mode == "encode" else None,
                     tactile_input_mode=args.tactile_input_mode, tactile_type=args.tactile_type,
                     tactile_encoder_pretrained_mode=args.encoder_pretrained_mode,
+                    wan_training_optimization=getattr(args, 'wan_training_optimization', 'compiled'),
                     batch_size=args.batch_size, num_steps=args.steps, save_freq=args.save_freq, device=args.device,
                     ckpt_dir=str(output), task_name=tasks[0] if len(tasks) == 1 else "multi_task",
                     seed=args.seed, num_epochs=1)
@@ -756,14 +776,14 @@ def main():
     p.add_argument("--tactile-insert-location", choices=["encoder", "decoder"], default="decoder")
     p.add_argument('--tactile-preprocessing', choices=['auto', 'cpu', 'cuda'], default='auto',
                    help='Batch dense nonlinear TPS on CUDA; cpu retains reference preprocessing')
-    p.add_argument('--wan-training-optimization', choices=['reference', 'compiled'], default='reference',
+    p.add_argument('--wan-training-optimization', choices=['reference', 'compiled'], default='compiled',
                    help='Compile a full five-frame Wan encoder; keep all encoder parameters trainable')
     p.add_argument("--encoder-ckpt", type=Path)
     p.add_argument("--encoder-method", default="ResNet")
     p.add_argument('--encoder-pretrained-mode', choices=['univtac', 'tactile', 'vision'], default='univtac')
-    p.add_argument('--encoder-pretrain-init', choices=['scratch', 'official'],
+    p.add_argument('--encoder-pretrain-init', choices=['scratch', 'official', 'adapted'],
                    help='Require the encoder checkpoint to have this pretraining initialization')
-    p.add_argument("--encoder-size", choices=["S", "B", "L"], default=None)
+    p.add_argument("--encoder-size", choices=["S", "B", "official"], default=None)
     p.add_argument("--cameras", choices=["auto", "head", "all"], default="auto")
     p.add_argument("--image-size", type=int, default=224)
     p.add_argument("--chunk-size", type=int, default=50)

@@ -2,13 +2,13 @@
 
 Use `ENCODER_PRETRAINED_MODE=univtac|tactile|vision` together with `ENCODER_METHOD`
 for encoded tactile inputs. The launcher selects the smallest configured official
-variant and fine-tunes the encoder with the policy. Temporal encoders use four
+variant (`ENCODER_SIZE=official` for external models) and fine-tunes the encoder with the policy. Temporal encoders use four
 frames at stride two; Wan2.2-VAE uses five chronological frames at stride two and
 outputs 98×192 patchified features per sensor. See [encoder sources and examples](../encoder/PRETRAINED.md)
-for downloads, checkpoint migration, supported sizes and shared adaptation parameters.
+for model directories, scratch/official/adapted initialization, downloads and supported sizes.
 
 Set `ENCODER_INIT=official` with `ENCODER_PRETRAINED_MODE=tactile` or
-`ENCODER_PRETRAINED_MODE=vision ENCODER_METHOD=Wan2.2-VAE`, and no `ENCODER_CKPT`,
+`ENCODER_PRETRAINED_MODE=vision ENCODER_METHOD=Wan22_VAE`, and no `ENCODER_CKPT`,
 to initialize downstream policy training directly from the official weights,
 skipping discovery of existing encoder runs. Rank zero only
 converts the weights into the policy checkpoint format; it performs no separate
@@ -150,7 +150,7 @@ Outputs are in `test_results/<model_id>/<step>/`: `logs/<task>.log`, `videos/<ta
 
 For `depth_deform_nonlinear` and `depth_deform_nonlinear_radial`, `TACTILE_PREPROCESSING=auto` (the default) moves dense TPS evaluation to CUDA during training. Data workers solve the small TPS systems and load camera depth; the GPU constructs the same dense displacement fields in bounded frame batches. This avoids rebuilding a dense CPU interpolation map for almost every shuffled tactile frame. Duplicate-marker merging, camera-depth normalization, temporal windows, and displacement encoding retain the CPU reference semantics. Other representations use their existing preprocessing. Set `TACTILE_PREPROCESSING=cpu` to run the reference path. `data_wait_max_ms` reports the greatest data wait across ranks, since a slow nonzero rank can stall the entire update while rank 0 reports little local waiting.
 
-For the two StarVLA Wan2.2-VAE encode commands, `WAN_TRAINING_OPTIMIZATION=compiled` opts into full-clip five-frame encoding, channels-last 3D convolution weights, CuDNN algorithm selection, and compilation of the encoder forward/backward. Five frames and all trainable encoder parameters are retained. The reference path remains the default; set the flag only on a Wan command. Parameter names, shapes and dtypes are checkpoint compatible. Eval/no-grad, non-five-frame, tiled and sliced execution use the streaming reference. Compilation/autotuning adds first-step startup time and can produce ordinary floating-point differences; it does not promise bitwise identical training. With the stage profiler, add `--wan-training-optimization compiled`. `scripts/test_wan_training_fast.py` checks temporal boundaries, gradients, fallback paths and state-dict compatibility.
+Wan2.2-VAE tactile encoding defaults to `WAN_TRAINING_OPTIMIZATION=compiled`, which enables full-clip five-frame encoding, channels-last 3D convolution weights, CuDNN algorithm selection, and compilation of the encoder forward/backward. Five frames and all trainable encoder parameters are retained. Set `WAN_TRAINING_OPTIMIZATION=reference` to disable compilation. Other encoder methods ignore this option. Parameter names, shapes and dtypes are checkpoint compatible. Eval/no-grad, non-five-frame, tiled and sliced execution use the streaming reference. Compilation/autotuning adds first-step startup time and can produce ordinary floating-point differences; it does not promise bitwise identical training. The stage profiler also defaults to `--wan-training-optimization compiled`. `scripts/test_wan_training_fast.py` checks temporal boundaries, gradients, fallback paths and state-dict compatibility.
 
 To measure training stages on an existing run's episode split and encoder initializer:
 
@@ -207,7 +207,7 @@ POLICY=starvla_pi TRAINING_MODE=single_task TASK=lift_can EPISODES=2 \
 
 POLICY=starvla_pi TRAINING_MODE=multi_task CAMERAS=all \
   TACTILE_MODE=encode TACTILE_INPUT_MODE=marker_rgb \
-  ENCODER_METHOD=VAE ENCODER_SIZE=S TACTILE_TYPE=full \
+  ENCODER_METHOD=RVAE ENCODER_SIZE=S TACTILE_TYPE=full \
   TACTILE_INSERT_LOCATION=encoder bash train_policy.sh
 ```
 
