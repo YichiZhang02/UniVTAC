@@ -3,7 +3,16 @@
 Legacy (mode, method) names remain readable for existing checkpoints. New
 commands use explicit Sparsh names and ``official`` as the fixed model size.
 """
-LOCAL_METHODS = ('ResNet', 'RVAE', 'RAE', 'SD-VAE', 'MAE', 'DINOv2', 'I-JEPA', 'V-JEPA')
+SINGLE_FRAME_METHODS = ('ResNet', 'RVAE', 'RAE', 'SD-VAE', 'MAE', 'DINOv2', 'I-JEPA', 'V-JEPA')
+MULTIFRAME_METHODS = tuple(name + '4Frame' for name in SINGLE_FRAME_METHODS)
+LOCAL_METHODS = SINGLE_FRAME_METHODS + MULTIFRAME_METHODS
+
+
+def base_method(method):
+    name = ALIASES.get(method, method)
+    return name[:-6] if name in MULTIFRAME_METHODS else name
+
+
 EXTERNAL_METHODS = {
     'Sparsh_mae': ('tactile', 'MAE', 'S'),
     'Sparsh_DINOv2': ('tactile', 'DINOv2', 'B'),
@@ -16,7 +25,7 @@ EXTERNAL_METHODS = {
     'SigLIP2': ('vision', 'SigLIP2', 'B'),
     'V-JEPA2': ('vision', 'V-JEPA2', 'L'),
 }
-ALIASES = {'VAE': 'RVAE', 'IJEPA': 'I-JEPA', 'IJPEA': 'I-JEPA', 'VJEPA': 'V-JEPA',
+ALIASES = {'VAE4Frame': 'RVAE4Frame', 'VAE': 'RVAE', 'IJEPA': 'I-JEPA', 'IJPEA': 'I-JEPA', 'VJEPA': 'V-JEPA',
            'Sparsh_MAE': 'Sparsh_mae', 'AnyTouch2': 'Anytouch2', 'Wan2.2-VAE': 'Wan22_VAE'}
 
 

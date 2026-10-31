@@ -801,6 +801,7 @@ class BaseTask(UipcRLEnv):
             'tactile': {},
             'actor': {},
             'step': self.step_count,
+            'physics_step': self._physics_step_count,
             'atom': {
                 'id': self.atom_id,
                 'tag': self.atom_tag

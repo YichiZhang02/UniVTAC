@@ -10,7 +10,7 @@ fi
 
 MODEL_ID=${1:-20261001-165913-264380040_starvla_groot_multi_task_all_encode_marker_rgb_DINOv2_S_cls_encoder}
 STEP=${2:-30000}
-CUDA_VISIBLE_DEVICES=${3:-0,1,2,3,4,5,6,7}
+GPU_IDS=${3:-0,1,2,3,4,5,6,7}
 NUM_GPU=${4:-8}
 TASK_CONFIG="demo"
 TOTAL_NUM=20                           # Valid evaluation episodes per task.
@@ -53,5 +53,5 @@ exec "$PYTHON_BIN" -u "$ROOT/scripts/test_policy.py" \
   --start-seed "$START_SEED" --max-seed "$MAX_SEED" --max-errors "$MAX_ERRORS" \
   --config-overrides "task_overrides.reset_time_limit=$RESET_TIME_LIMIT" \
   --model-id "$MODEL_ID" --step "$STEP" \
-  --cuda-visible-devices "$CUDA_VISIBLE_DEVICES" --num-gpu "$NUM_GPU" \
+  --cuda-visible-devices "$GPU_IDS" --num-gpu "$NUM_GPU" \
   "${extra_args[@]}"

@@ -218,7 +218,8 @@ class UniVTACDataset(Dataset):
     def __init__(self, files_by_task, *, cameras, tactile_mode, tactile_input_mode,
                  chunk_size, stats, policy, image_size, action_mode="absolute_joint",
                  tactile_num_frames=1, tactile_frame_stride=1, tactile_pretrained_mode='univtac',
-                 tactile_background_offset=.5, tactile_preprocessing='cpu', max_open_files=32):
+                 tactile_background_offset=.5, tactile_preprocessing='cpu', max_open_files=32,
+                 tactile_simulation_step_stride=None):
         if not isinstance(max_open_files, int) or max_open_files < 1:
             raise ValueError('max_open_files must be a positive integer')
         self.rows = []
@@ -234,6 +235,7 @@ class UniVTACDataset(Dataset):
         self._baselines = {}
         self.tactile_num_frames = tactile_num_frames
         self.tactile_frame_stride = tactile_frame_stride
+        self.tactile_simulation_step_stride = tactile_simulation_step_stride
         self.tactile_pretrained_mode = tactile_pretrained_mode
         self.tactile_background_offset = tactile_background_offset
         self.tactile_preprocessing = tactile_preprocessing
@@ -246,6 +248,11 @@ class UniVTACDataset(Dataset):
             for path in paths:
                 with h5py.File(path, "r") as f:
                     length = len(f["embodiment/joint"])
+                    if tactile_simulation_step_stride is not None:
+                        from encoder.temporal_sampling import validate_simulation_spacing
+                        steps = validate_simulation_spacing(f, tactile_frame_stride, tactile_simulation_step_stride)
+                        if len(steps) != length:
+                            raise ValueError(f'Misaligned policy trajectory steps: {path}')
                     for camera in cameras:
                         if f"observation/{camera}/rgb" not in f:
                             raise KeyError(f"{path}: missing {camera} camera")
@@ -253,7 +260,8 @@ class UniVTACDataset(Dataset):
                         for side in ("left", "right"):
                             if f"tactile/{side}_tactile" not in f:
                                 raise KeyError(f"{path}: missing {side} tactile stream")
-                for t in range(max(0, length - 1)):
+                start = (tactile_num_frames - 1) * tactile_frame_stride if tactile_simulation_step_stride is not None else 0
+                for t in range(start, max(start, length - 1)):
                     self.rows.append((task, path, t))
                     self.task_counts[task] += 1
 
@@ -414,6 +422,7 @@ def run(args):
             args.encoder_pretrained_mode, args.encoder_method, args.encoder_size,
             getattr(args, 'encoder_pretrain_init', None))
     args.tactile_num_frames, args.tactile_frame_stride = 1, 1
+    args.tactile_simulation_step_stride = None
     if args.tactile_mode == 'encode':
         from encoder.pretrained_registry import validate_identity
         validate_identity(args.encoder_pretrained_mode, args.encoder_method, args.encoder_size)
@@ -445,6 +454,7 @@ def run(args):
             raise ValueError('Encoder checkpoint method/size does not match requested model')
         args.tactile_num_frames = encoder_state.get('num_frames', 1)
         args.tactile_frame_stride = encoder_state.get('frame_stride', 1)
+        args.tactile_simulation_step_stride = encoder_state.get('simulation_step_stride')
     if args.tactile_mode == "encode" and args.tactile_input_mode in ("rgb_only", "marker_rgb"):
         require_rgb_model(torch.load(args.encoder_ckpt, map_location="cpu", weights_only=True))
     if args.tactile_mode == "encode" and args.tactile_input_mode in DEPTH_DEFORM_SPECS:
@@ -484,6 +494,7 @@ def run(args):
                                            policy=args.policy, image_size=image_size, action_mode=args.action_mode,
                                            tactile_num_frames=args.tactile_num_frames,
                                            tactile_frame_stride=args.tactile_frame_stride,
+                                           tactile_simulation_step_stride=args.tactile_simulation_step_stride,
                                            tactile_pretrained_mode=args.encoder_pretrained_mode,
                                            tactile_background_offset=130/255 if args.encoder_method in ('AnyTouch2', 'Anytouch2') else .5,
                                            tactile_preprocessing=args.tactile_preprocessing)
@@ -611,6 +622,7 @@ def run(args):
     config_dump["color_order"] = "RGB"
     config_dump.update(tactile_num_frames=args.tactile_num_frames,
                        tactile_frame_stride=args.tactile_frame_stride,
+                       tactile_simulation_step_stride=args.tactile_simulation_step_stride,
                        encoder_pretrained_mode=args.encoder_pretrained_mode)
     config_dump.update(state_mode="absolute_joint", action_mode=args.action_mode, action_gap=1,
                        n_action_steps=args.n_action_steps)

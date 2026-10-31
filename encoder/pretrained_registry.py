@@ -41,7 +41,7 @@ def validate_identity(mode, method, size=None):
 def temporal_spec(mode, method):
     mode, method, _ = resolve_identity(mode, method)
     if mode == 'univtac':
-        return (1, 1)
+        return (4, 1) if method.endswith('4Frame') else (1, 1)
     if method == 'Wan2.2-VAE':
         return (5, 2)
     return (4, 2) if mode == 'tactile' or method in ('V-JEPA', 'AnyTouch2', 'V-JEPA2', 'Wan2.2-VAE') else (1, 1)
@@ -114,6 +114,6 @@ def constructor_metadata(checkpoint):
     """Only path-free constructor fields belong in a policy's YAML config."""
     keys = ('format_version', 'color_order', 'pretrained_mode', 'method', 'size',
             'architecture', 'image_size', 'input_mode', 'in_chans', 'depth_deform_encoding',
-            'num_frames', 'frame_stride', 'background_offset', 'model_config', 'source_repo', 'source_revision',
-            'wan_patch_size', 'initialization', 'latent_calibration')
+            'num_frames', 'frame_stride', 'temporal_compression', 'output_frames', 'simulation_step_stride', 'background_offset', 'model_config', 'source_repo', 'source_revision',
+            'wan_patch_size', 'sd_patch_size', 'temporal_backend', 'initialization', 'latent_calibration')
     return {key: checkpoint[key] for key in keys if key in checkpoint}

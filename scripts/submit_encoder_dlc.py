@@ -1,4 +1,4 @@
-"""Submit Sparsh/Wan pretraining to the existing UniVTAC DLC workspace.
+"""Submit Sparsh/AnyTouch2/Wan training to the existing UniVTAC DLC workspace.
 
 Run --submit to freeze sources and submit scratch jobs (Sparsh 1 GPU, Wan 4).
 Use --ledger <path> --status to inspect the same jobs without resubmitting.
@@ -24,6 +24,7 @@ from encoder.catalog import canonical_name
 PYTHON = '/mnt/yichi_data/miniconda3/envs/univtac/bin/python'
 MODELS = {'Sparsh_mae': ('tactile', 'official'), 'Sparsh_DINOv2': ('tactile', 'official'),
           'Sparsh_IJEPA': ('tactile', 'official'), 'Sparsh_VJEPA': ('tactile', 'official'),
+          'Anytouch2': ('tactile', 'official'),
           'Wan22_VAE': ('vision', 'official')}
 COMMON = [
     '--data_sources=d-lu3fmaylj6r0n6hkms:v1:/mnt/yichi_data/',
@@ -137,6 +138,8 @@ def prepare(args, ledger):
                 resume_args += ['--epochs', str(args.epochs)]
             if args.early_stop_patience is not None:
                 resume_args += ['--early-stop-patience', str(args.early_stop_patience)]
+        if args.lr is not None:
+            resume_args += ['--lr', str(args.lr)]
         command = shlex.join(['env', 'CUDA_VISIBLE_DEVICES='+','.join(map(str, range(gpus))), f'NUM_PROCESSES={gpus}',
             'OMP_NUM_THREADS=4', 'NCCL_DEBUG=WARN', 'NCCL_SOCKET_IFNAME=eth0',
             'TOKENIZERS_PARALLELISM=false', 'PYTHONUNBUFFERED=1', f'PYTHON_BIN={PYTHON}',
@@ -149,6 +152,8 @@ def prepare(args, ledger):
             name=f'yichi_enc_{stamp}_{key}_{args.init}', command=command,
             output_dir=str(output), status='Prepared', source=str(source), gpus=gpus,
             batch_size=64, per_gpu_batch_size=64//gpus, tactile_preprocessing=args.preprocessing, **resume_info))
+        if args.resource_id:
+            records[-1]['resource_id'] = args.resource_id
     save(ledger, records)
     return records
 
@@ -161,9 +166,11 @@ def main():
     parser.add_argument('--resume-ledger', type=Path, help='Snapshot last.pth for selected models from an earlier ledger')
     parser.add_argument('--additional-resume-ledger', type=Path, action='append', default=[])
     parser.add_argument('--epochs', type=int, help='Total epoch limit, including completed epochs when resuming')
+    parser.add_argument('--lr', type=float, help='Override the model configuration learning rate')
+    parser.add_argument('--resource-id', help='DLC quota/resource ID (also persisted in the ledger)')
     parser.add_argument('--early-stop-patience', type=int, help='Unimproved validation epochs before early stopping')
     parser.add_argument('--preprocessing', choices=['auto', 'cpu', 'cuda'], default='auto')
-    parser.add_argument('--methods', nargs='+', type=lambda name: canonical_name('vision' if name in ('Wan22_VAE', 'Wan2.2-VAE') else 'tactile', name), choices=MODELS, default=list(MODELS))
+    parser.add_argument('--methods', nargs='+', type=lambda name: canonical_name('vision' if name in ('Wan22_VAE', 'Wan2.2-VAE') else 'tactile', name), choices=MODELS, default=[m for m in MODELS if m != 'Anytouch2'])
     parser.add_argument('--init', choices=['scratch', 'official', 'adapted'], default='scratch')
     parser.add_argument('--input', default='depth_deform_nonlinear_radial')
     parser.add_argument('--data-root', type=Path, default=ROOT / 'resources/data/contact')
@@ -183,6 +190,8 @@ def main():
     args.additional_resume_ledger = [path.resolve() for path in args.additional_resume_ledger]
     if args.epochs is not None and args.epochs < 1:
         parser.error('--epochs must be positive')
+    if args.lr is not None and args.lr <= 0:
+        parser.error('--lr must be positive')
     if args.early_stop_patience is not None and args.early_stop_patience < 0:
         parser.error('--early-stop-patience must be nonnegative')
     if args.status:
@@ -204,8 +213,15 @@ def main():
             resources = [f'--worker_gpu={gpus}', f'--worker_cpu={8 if gpus == 1 else 16}',
                          f'--worker_memory={"64Gi" if gpus == 1 else "128Gi"}',
                          f'--worker_shared_memory={"16Gi" if gpus == 1 else "32Gi"}']
+            common = list(COMMON)
+            resource_id = record.get('resource_id') or args.resource_id
+            if resource_id:
+                common = [arg for arg in common if not arg.startswith('--resource_id=')]
+                common.append('--resource_id='+resource_id)
+                record['resource_id'] = resource_id
+                save(args.ledger, records)
             code, output = remote(['submit', 'pytorchjob', '--name='+record['name'],
-                                   '--command='+record['command'], *COMMON, *resources])
+                                   '--command='+record['command'], *common, *resources])
             ids = re.findall(r'\b(dlc[a-z0-9]{10,})\b', output)
             record.update(returncode=code, submit_output=output,
                           status='Submitted' if code == 0 and ids else 'Submission failed or uncertain')
@@ -225,6 +241,8 @@ def main():
             detail = json.loads(output)
             assert detail['UserCommand'] == record['command']
             assert detail['JobSpecs'][0]['ResourceConfig']['GPU'] == str(record.get('gpus', 4))
+            if record.get('resource_id'):
+                assert detail['ResourceId'] == record['resource_id']
             record.update(status=detail['Status'], reason=detail.get('ReasonMessage', ''), detail=detail)
             save(args.ledger, records)
             print(record['method'], record['job_id'], record['status'], record['reason'], flush=True)

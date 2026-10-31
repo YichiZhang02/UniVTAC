@@ -183,7 +183,7 @@ Path(os.environ['CALL_LOG']).write_text(json.dumps(sys.argv[1:]))
             self.assertEqual(new.latent_tokens(image).shape, (1, 49, 384))
             torch.testing.assert_close(new.latent_tokens(image), old.latent_tokens(image))
 
-    def test_sd_vae_sizes_reconstruction_and_784_latents(self):
+    def test_sd_vae_sizes_reconstruction_and_patchified_latents(self):
         module = importlib.import_module('encoder.SD-VAE.model')
         counts = {}
         for size in ('S', 'B'):
@@ -202,14 +202,14 @@ Path(os.environ['CALL_LOG']).write_text(json.dumps(sys.argv[1:]))
         restored = local_encoder('SD-VAE', 'S', 1).eval()
         restored.load_state_dict(model.encoder.state_dict(), strict=True)
         with torch.no_grad():
-            self.assertEqual(restored.patch_tokens(torch.rand(1, 1, 224, 224)).shape, (1, 784, 4))
+            self.assertEqual(restored.patch_tokens(torch.rand(1, 1, 224, 224)).shape, (1, 196, 16))
 
     def test_new_local_policy_token_modes(self):
         from policy.vla_common.tactile_encode import TactileEncoder
-        for method, count in (('RAE', 196), ('RVAE', 49), ('SD-VAE', 784)):
+        for method, count in (('RAE', 196), ('RVAE', 49), ('SD-VAE', 196)):
             config = SimpleNamespace(tactile_encoder_path=None,
                 tactile_encoder_config=dict(method=method, size='S', input_mode='marker_only',
-                    in_chans=1, image_size=224, pretrained_mode='univtac'),
+                    in_chans=1, image_size=224, sd_patch_size=2, pretrained_mode='univtac'),
                 tactile_input_mode='marker_only', tactile_type='full', freeze_tactile_encoder=False,
                 tactile_encoder_keys=lambda: ['touch'])
             encoder = TactileEncoder(config, 16).eval()
@@ -228,8 +228,8 @@ Path(os.environ['CALL_LOG']).write_text(json.dumps(sys.argv[1:]))
             def forward(self, feature):
                 return feature.new_zeros(feature.shape[0], 512, *feature.shape[-2:])
 
-        for method, side in (('RAE', 14), ('RVAE', 7), ('SD-VAE', 28)):
-            state = dict(method=method, size='S', input_mode='marker_only', in_chans=1, image_size=224)
+        for method, side in (('RAE', 14), ('RVAE', 7), ('SD-VAE', 14)):
+            state = dict(method=method, size='S', input_mode='marker_only', in_chans=1, image_size=224, sd_patch_size=2)
             adapter = ViTTactileBackbone(method, 'S', None, Position(), 'full', 'marker_only', state).eval()
             image = torch.rand(1, 1, 256, 256)
             with torch.no_grad():

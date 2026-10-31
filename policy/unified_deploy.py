@@ -104,6 +104,11 @@ class Policy(BasePolicy):
         self.encoder_pretrained_mode = self.run['config'].get('encoder_pretrained_mode', 'univtac')
         self.tactile_num_frames = self.run['config'].get('tactile_num_frames', 1)
         self.tactile_frame_stride = self.run['config'].get('tactile_frame_stride', 1)
+        self.tactile_simulation_step_stride = self.run['config'].get(
+            'tactile_simulation_step_stride', (self.run['config'].get('tactile_encoder_config') or {}).get('simulation_step_stride'))
+        if self.tactile_simulation_step_stride is not None and (
+                self.tactile_num_frames != 4 or self.tactile_frame_stride != 1 or self.tactile_simulation_step_stride != 2):
+            raise ValueError('Temporal encoder requires 4 frames at exactly 2 physical simulation steps')
         self.tactile_background_offset = (130/255 if self.options.get('encoder_method') == 'AnyTouch2' else .5)
         if self.tactile_mode != "none":
             from encoder.linear_depth_deform import require_depth_deform_encoding
@@ -302,13 +307,24 @@ class Policy(BasePolicy):
                         self.tactile_baselines[side] = tactile.clone()
                     tactile = (tactile - self.tactile_baselines[side] + self.tactile_background_offset).clamp(0, 1)
                 if getattr(self, 'tactile_num_frames', 1) > 1:
-                    depth = (self.tactile_num_frames - 1) * self.tactile_frame_stride + 1
-                    if side not in self.tactile_history:
-                        self.tactile_history[side] = deque([tactile] * depth, maxlen=depth)
-                    self.tactile_history[side].append(tactile)
-                    from encoder.pretrained_registry import history_indices
-                    tactile = torch.stack([self.tactile_history[side][i]
-                        for i in history_indices(depth - 1, self.tactile_num_frames, self.tactile_frame_stride)])
+                    simulation_stride = getattr(self, 'tactile_simulation_step_stride', None)
+                    if simulation_stride is not None:
+                        from encoder.temporal_sampling import SimulationTactileHistory
+                        if 'physics_step' not in observation:
+                            raise ValueError('Temporal encoder inference requires an explicit physics_step counter')
+                        if side not in self.tactile_history:
+                            self.tactile_history[side] = SimulationTactileHistory(self.tactile_num_frames, simulation_stride)
+                        history = self.tactile_history[side]
+                        history.append(tactile, observation['physics_step'])
+                        tactile = history.clip(require_complete=not getattr(self, '_warming_tactile_history', False))
+                    else:
+                        depth = (self.tactile_num_frames - 1) * self.tactile_frame_stride + 1
+                        if side not in self.tactile_history:
+                            self.tactile_history[side] = deque([tactile] * depth, maxlen=depth)
+                        self.tactile_history[side].append(tactile)
+                        from encoder.pretrained_registry import history_indices
+                        tactile = torch.stack([self.tactile_history[side][i]
+                            for i in history_indices(depth - 1, self.tactile_num_frames, self.tactile_frame_stride)])
                 batch[f"observation.images.tac_{side}"] = tactile.unsqueeze(0)
         if self.tokenizer is not None:
             if self.kind == "n0vtla":
@@ -353,7 +369,28 @@ class Policy(BasePolicy):
 
     def eval(self, task, observation):
         # Advance tactile history at EVERY environment step, including queued actions.
-        batch = self.encode_obs(observation) if getattr(self, 'tactile_num_frames', 1) > 1 else None
+        if getattr(self, 'tactile_simulation_step_stride', None) is not None:
+            if int(task.cfg.decimation) != self.tactile_simulation_step_stride:
+                raise ValueError('Inference must observe every 2 physical simulation steps; '
+                                 'configure eval decimation=2 to match encoder training')
+            # Gather actual observations while holding the current command before
+            # the first policy action. Repeating the first frame would differ from
+            # the complete-history windows used in encoder and policy training.
+            self._warming_tactile_history = True
+            try:
+                batch = self.encode_obs(observation)
+                while not all(history.ready for history in self.tactile_history.values()):
+                    previous_physics_step = int(observation['physics_step'])
+                    with task._configured_decimation():
+                        task._step(is_save=False)
+                    observation = task._get_observations()
+                    if int(observation['physics_step']) - previous_physics_step != self.tactile_simulation_step_stride:
+                        raise ValueError('Tactile warmup did not advance exactly two physical simulation steps')
+                    batch = self.encode_obs(observation)
+            finally:
+                self._warming_tactile_history = False
+        else:
+            batch = self.encode_obs(observation) if getattr(self, 'tactile_num_frames', 1) > 1 else None
         if self.kind == "act" and self.temporal_agg:
             self.history.append((self.time, self.predict_chunk(observation, batch)))
             self.history = [(start, chunk) for start, chunk in self.history if self.time - start < len(chunk)]
@@ -378,6 +415,7 @@ class Policy(BasePolicy):
         self.last_video_input_step = None
         self.tactile_baselines = {}
         self.tactile_history = {}
+        self._warming_tactile_history = False
         self.actions = deque()
         self.history = []
         self.time = 0

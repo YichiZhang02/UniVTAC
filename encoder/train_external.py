@@ -110,7 +110,11 @@ class VisionAdaptation(nn.Module):
         if not hasattr(self, 'teacher'):
             return
         for teacher, student in zip(self.teacher.parameters(), self.encoder.parameters()):
-            teacher.lerp_(student, 1-momentum)
+            if student.is_floating_point() or student.is_complex():
+                teacher.lerp_(student, 1-momentum)
+            else:
+                # AnyTouch2 stores fixed integer position IDs as a Parameter.
+                teacher.copy_(student)
 
     def forward(self, images):
         # DataParallel worker threads need an explicit bf16 context of their own.
@@ -269,9 +273,16 @@ def run(args):
         from encoder.sparsh_training import SparshTraining
         core = SparshTraining(encoder, args.mask_ratio)
         objective = core.recipe
+    elif encoder.method == 'AnyTouch2':
+        from encoder.Anytouch2.training import VideoMAETraining
+        core = VideoMAETraining(encoder, args.mask_ratio)
+        objective = core.recipe
     else:
         core = VisionAdaptation(encoder, args.mask_ratio, args.kl_weight)
         objective = 'reconstruction_kl' if args.method in ('Wan2.2-VAE', 'Wan22_VAE') else 'masked_latent_and_patch_rgb'
+    if encoder.method == 'AnyTouch2':
+        metadata.update(training_objective=objective, mae_mask_ratio=args.mask_ratio,
+                        mae_target='normalized_tubelet_pixels', mae_decoder_init='random')
     core = core.to(args.device)
     model = core
     if distributed:

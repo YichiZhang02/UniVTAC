@@ -31,7 +31,9 @@ def pool_spatial_tokens(tokens, grid_size, prefix_tokens=0, pool_size=3):
 def tactile_token_grid(backbone, method, pretrained_mode, token_count):
     """Return the spatial grid, independently of the number of temporal slices."""
     if pretrained_mode == 'univtac':
-        side = (28 if method == 'SD-VAE' else 7 if method in ('VAE', 'RVAE') else isqrt(token_count) if method == 'ResNet'
+        from encoder.catalog import base_method
+        method = base_method(method)
+        side = (backbone.grid_size if method == 'SD-VAE' else 7 if method in ('VAE', 'RVAE') else isqrt(token_count // getattr(backbone, 'output_frames', 1)) if method == 'ResNet'
                 else backbone.grid_size)
         return side, side
     if method in ('Wan2.2-VAE', 'Wan22_VAE'):
@@ -53,7 +55,17 @@ def pool_tactile_tokens(tokens, backbone, method, pretrained_mode, *, includes_c
 
 def univtac_pool_tokens(backbone, method, images, pool_size=3):
     """Return the cls-mode feature followed by pooled spatial tokens in one pass."""
-    if method == 'ResNet':
+    from encoder.catalog import base_method
+    multi_frame = method.endswith('4Frame')
+    method = base_method(method)
+    if method == 'ResNet' and multi_frame:
+        grid = backbone.spatial_grid(images)
+        b, k, d, h, w = grid.shape
+        cls = backbone.backbone.fc(grid.mean((-2, -1))).mean(1)[:, None]
+        patches = pool_spatial_tokens(grid.flatten(3).transpose(2, 3).flatten(1, 2),
+                                     (h, w), pool_size=pool_size)
+        patches = backbone.backbone.fc(patches)
+    elif method == 'ResNet':
         net = backbone.backbone
         grid = net.maxpool(net.relu(net.bn1(net.conv1(images))))
         grid = net.layer4(net.layer3(net.layer2(net.layer1(grid))))
@@ -64,7 +76,7 @@ def univtac_pool_tokens(backbone, method, images, pool_size=3):
         patches = net.fc(patches)
     elif method in ('VAE', 'RVAE', 'SD-VAE'):
         cls, patches = backbone.cls_and_latent_tokens(images)
-        side = 28 if method == 'SD-VAE' else 7
+        side = backbone.grid_size if method == 'SD-VAE' else 7
         patches = pool_spatial_tokens(patches, (side, side), pool_size=pool_size)
     else:
         tokens = backbone.tokens(images)
@@ -87,9 +99,13 @@ def pool_act_tactile_outputs(forward):
                 and hasattr(self.backbone, 'embed_dim')):
             tokens = univtac_pool_tokens(self.backbone, self.pooling_method, args[0], pool_size)
             feature = tokens.transpose(1, 2).unsqueeze(2)
-            spatial = tokens[:, 1:].transpose(1, 2).reshape(tokens.shape[0], tokens.shape[2], pool_size, pool_size)
-            position = self.position_embedding(spatial).flatten(2).unsqueeze(2)
-            position = position.expand(tokens.shape[0], -1, -1, -1)
+            b, _, d = tokens.shape
+            spatial = tokens[:, 1:].reshape(b, -1, pool_size, pool_size, d)
+            k = spatial.shape[1]
+            spatial = spatial.reshape(b * k, pool_size, pool_size, d).permute(0, 3, 1, 2)
+            position = self.position_embedding(spatial).flatten(2)
+            position = position.expand(b * k, -1, -1)
+            position = position.reshape(b, k, position.shape[1], -1).permute(0, 2, 1, 3).flatten(2).unsqueeze(2)
             if hasattr(self, 'cls_position'):
                 cls_position = self.cls_position.weight[None].transpose(1, 2).unsqueeze(2)
                 cls_position = cls_position.expand(tokens.shape[0], -1, -1, -1)

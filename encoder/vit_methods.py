@@ -10,3 +10,7 @@ IJEPA = import_module('I-JEPA.model').IJEPA
 VJEPA = import_module('V-JEPA.model').VJEPA
 METHODS = {'ResNet': ResNet, 'RVAE': RVAE, 'RAE': RAE, 'SD-VAE': SDVAE, 'MAE': MAE, 'DINOv2': DINOv2,
            'I-JEPA': IJEPA, 'V-JEPA': VJEPA}
+
+from encoder.catalog import MULTIFRAME_METHODS
+for _name in MULTIFRAME_METHODS:
+    METHODS[_name] = import_module(f'encoder.{_name}.model').Model

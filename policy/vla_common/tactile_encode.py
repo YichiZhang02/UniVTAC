@@ -40,11 +40,16 @@ class TactileEncoder(nn.Module):
             from encoder.external import ExternalEncoder
             self.backbone = ExternalEncoder(self.pretrained_mode, method, size, metadata=state, pretrained=False)
         else:
-            from encoder.factory import local_encoder
+            from encoder.factory import local_encoder, require_current_local_checkpoint
             from encoder.catalog import canonical_name
             method = canonical_name('univtac', method)
+            require_current_local_checkpoint(state)
+            if method.endswith('4Frame') and (state.get('simulation_step_stride') != 2 or state.get('frame_stride') != 1):
+                raise ValueError('Multi-frame checkpoint must specify simulation_step_stride=2 and frame_stride=1')
             self.backbone = local_encoder(method, size, state['in_chans'],
-                num_frames=state.get('num_frames', 1), image_size=state.get('image_size', 224))
+                num_frames=state.get('num_frames', 1), image_size=state.get('image_size', 224),
+                temporal_compression=state.get('temporal_compression') or '4in2',
+                sd_patch_size=state.get('sd_patch_size', 2))
         if "encoder" in state:
             self.backbone.load_state_dict(state["encoder"], strict=True)
         wan_optimization = getattr(config, 'wan_training_optimization', 'compiled')
@@ -55,6 +60,8 @@ class TactileEncoder(nn.Module):
             enable_wan_training_fast(self.backbone.model)
             torch.backends.cudnn.benchmark = True
         self.method = method
+        from encoder.catalog import base_method
+        self.base_method = base_method(method)
         self.mode = config.tactile_type
         self.keys = list(config.tactile_encoder_keys())
         self.image_size = state.get("image_size", 224)
@@ -63,7 +70,8 @@ class TactileEncoder(nn.Module):
             raise ValueError("encode mode requires tactile keys")
         if config.freeze_tactile_encoder:
             self.backbone.requires_grad_(False)
-        feature_dim = 2048 if method == "ResNet" and size == "B" and self.mode == "full" else self.backbone.embed_dim
+        from encoder.catalog import base_method
+        feature_dim = 2048 if base_method(method) == "ResNet" and size == "B" and self.mode == "full" else self.backbone.embed_dim
         self.proj = nn.Linear(feature_dim, output_dim)
         from encoder.pretrained_registry import constructor_metadata
         config.tactile_encoder_config = {**constructor_metadata(state), **{
@@ -102,6 +110,12 @@ class TactileEncoder(nn.Module):
             x = F.interpolate(x, size=(self.image_size, self.image_size), mode="bilinear", align_corners=False)
         if self.mode == "cls":
             return self.backbone(x).unsqueeze(1)
+        if self.method.endswith('4Frame'):
+            if self.base_method in ('MAE', 'DINOv2'):
+                return self.backbone.tokens(x)
+            if self.base_method in ('RVAE', 'SD-VAE'):
+                return self.backbone.latent_tokens(x)
+            return self.backbone.patch_tokens(x)
         if self.method == "ResNet":
             net = self.backbone.backbone
             x = net.maxpool(net.relu(net.bn1(net.conv1(x))))

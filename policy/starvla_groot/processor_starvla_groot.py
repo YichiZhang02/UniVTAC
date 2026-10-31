@@ -67,6 +67,8 @@ def make_starvla_groot_pre_post_processors(
         tactile_keys=list(getattr(config, "tactile_windowed_keys", lambda: [])()),
         num_frames=int(getattr(config, "tactile_num_frames", 1)),
         frame_offset=int(getattr(config, "tactile_frame_offset", 1)),
+        require_preassembled_window=(getattr(config, 'tactile_num_frames', 1) == 4 and
+                                     getattr(config, 'tactile_encoder_pretrained_mode', 'univtac') == 'univtac'),
     )
 
     input_steps: list[ProcessorStep] = [

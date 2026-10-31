@@ -19,14 +19,17 @@ class AnyTouchBackbone(nn.Module):
         self.new_position_ids = nn.Parameter(torch.arange(n + 1)[None], requires_grad=False)
         self.touch_projection = nn.Linear(self_config.hidden_size, config['projection_dim'], bias=False)
 
-    def forward(self, x):
+    def forward(self, x, patch_indices=None):
         emb = self.touch_model.embeddings
         patches = emb.patch_embedding(x.transpose(1, 2)).flatten(2).transpose(1, 2)
         pos = emb.position_embedding(self.new_position_ids)
         cls = (emb.class_embedding + pos[:, 0]).unsqueeze(1).expand(x.shape[0], -1, -1)
         # UniVTAC optical sensor is GelSight Mini (official sensor ID 3).
         sensor = self.sensor_token[3][None].expand(x.shape[0], -1, -1)
-        hidden = torch.cat((cls, sensor, patches + pos[:, 1:]), 1)
+        patches = patches + pos[:, 1:]
+        if patch_indices is not None:
+            patches = patches.gather(1, patch_indices[..., None].expand(-1, -1, patches.shape[-1]))
+        hidden = torch.cat((cls, sensor, patches), 1)
         hidden = self.touch_model.pre_layrnorm(hidden)
         hidden = self.touch_model.encoder(inputs_embeds=hidden).last_hidden_state
         return self.touch_projection(self.touch_model.post_layernorm(hidden))

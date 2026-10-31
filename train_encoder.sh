@@ -15,13 +15,15 @@ EXTRA=()
 INIT=""
 PREPROCESSING="${TACTILE_PREPROCESSING:-auto}"
 NUM_PROCESSES="${NUM_PROCESSES:-1}"
+COMPRESSION="${TEMPORAL_COMPRESSION:-4in2}"
 usage() {
-    echo "Usage: $0 [--init scratch|official|adapted] [--pretrained-mode univtac|tactile|vision] [--method METHOD] [--size S|B|official] [--input INPUT_MODE] [--data-root DIR] [--config FILE] [-- additional train.py options]"
+    echo "Usage: $0 [--init scratch|official|adapted] [--pretrained-mode univtac|tactile|vision] [--method METHOD] [--size S|B|official] [--temporal-compression 4in1|4in2] [--input INPUT_MODE] [--data-root DIR] [--config FILE] [-- additional train.py options]"
     echo "scratch S/B: ResNet RVAE RAE SD-VAE MAE DINOv2 I-JEPA V-JEPA; fixed official size: Sparsh_mae Sparsh_DINOv2 Sparsh_IJEPA Sparsh_VJEPA Wan22_VAE Anytouch2"
 }
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --tactile-preprocessing) PREPROCESSING="$2"; shift 2 ;;
+        --temporal-compression) COMPRESSION="$2"; shift 2 ;;
         --init) INIT="$2"; shift 2 ;;
         --pretrained-mode) PRETRAINED_MODE="$2"; shift 2 ;;
         --method|--model) METHOD="$2"; shift 2 ;;
@@ -49,6 +51,18 @@ fi
 case "$INPUT" in marker_only|rgb_only|marker_rgb|depth_deform_20|depth_deform_80|depth_deform_160|depth_deform_240|depth_deform_nonlinear|depth_deform_nonlinear_radial) ;; *) echo "Invalid input: $INPUT" >&2; exit 2 ;; esac
 CONFIG="${CONFIG:-$ROOT/encoder/$METHOD/config.yml}"
 RUN_DIR="$ROOT/encoder_results/$INPUT/$PRETRAINED_MODE/$METHOD/$SIZE/$INIT/$(date +%Y%m%d-%H%M%S-%6N)"
+if [[ "$METHOD" == *4Frame ]]; then
+    for ((i=0; i<${#EXTRA[@]}; i++)); do
+        if [[ "${EXTRA[i]}" == --temporal-compression && $((i + 1)) -lt ${#EXTRA[@]} ]]; then
+            COMPRESSION="${EXTRA[i+1]}"
+        elif [[ "${EXTRA[i]}" == --temporal-compression=* ]]; then
+            COMPRESSION="${EXTRA[i]#--temporal-compression=}"
+        fi
+    done
+    case "$COMPRESSION" in 4in1|4in2) ;; *) echo "Invalid temporal compression: $COMPRESSION" >&2; exit 2 ;; esac
+    RUN_DIR="$(dirname "$RUN_DIR")/$COMPRESSION/$(basename "$RUN_DIR")"
+    EXTRA=(--temporal-compression "$COMPRESSION" "${EXTRA[@]}")
+fi
 for ((i=0; i<${#EXTRA[@]}; i++)); do
     if [[ "${EXTRA[i]}" == --resume && $((i + 1)) -lt ${#EXTRA[@]} ]]; then
         RUN_DIR="$(dirname "${EXTRA[i+1]}")"

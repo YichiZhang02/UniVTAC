@@ -63,6 +63,7 @@ class TactileTemporalWindowStep(ProcessorStep):
     tactile_keys: list[str] = field(default_factory=list)
     num_frames: int = 1
     frame_offset: int = 1
+    require_preassembled_window: bool = False
 
     # runtime state — not part of the serialised config
     _history: dict[str, deque] = field(default_factory=dict, init=False, repr=False)
@@ -78,6 +79,7 @@ class TactileTemporalWindowStep(ProcessorStep):
             "tactile_keys": list(self.tactile_keys),
             "num_frames": int(self.num_frames),
             "frame_offset": int(self.frame_offset),
+            "require_preassembled_window": self.require_preassembled_window,
         }
 
     def reset(self) -> None:
@@ -121,7 +123,11 @@ class TactileTemporalWindowStep(ProcessorStep):
             # If the tensor is already 5-D the dataset has already assembled the window
             # (training path or test with synthetic data) — pass through unchanged.
             if t.dim() == 5:
+                if t.shape[1] != self.num_frames:
+                    raise ValueError(f'Expected {self.num_frames} tactile frames, got {t.shape[1]}')
                 continue
+            if self.require_preassembled_window:
+                raise ValueError('This encoder requires a preassembled window of real observations at two physical simulation steps; use UnifiedPolicy history')
 
             # t: [B, C, H, W] (inference, single frame per step)
             if key not in self._history:

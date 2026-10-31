@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'encoder'))
 from encoder.pretrained_registry import latest_checkpoint, require_initialization, constructor_metadata
-from encoder.train_external import ExternalFrames, calibrate_wan
+from encoder.train_external import ExternalFrames, calibrate_wan, VisionAdaptation
 from encoder.image_io import encode_rgb, ENCODING_ATTR, STANDARD_ENCODING
 
 
@@ -24,6 +24,27 @@ class ExternalPretrainingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         torch.set_num_threads(4)
+
+    def test_teacher_ema_copies_integer_position_ids(self):
+        class Encoder(torch.nn.Module):
+            method = 'AnyTouch2'
+            embed_dim = 4
+
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.ones(2, 2))
+                self.position_ids = torch.nn.Parameter(torch.arange(3), requires_grad=False)
+
+        for device in ('cpu', 'cuda') if torch.cuda.is_available() else ('cpu',):
+            with self.subTest(device=device):
+                objective = VisionAdaptation(Encoder()).to(device)
+                with torch.no_grad():
+                    objective.encoder.weight.add_(2)
+                    objective.encoder.position_ids.add_(5)
+                objective.update_teacher(.5)
+                torch.testing.assert_close(objective.teacher.weight, torch.full_like(objective.teacher.weight, 2))
+                torch.testing.assert_close(objective.teacher.position_ids, objective.encoder.position_ids)
+                self.assertFalse(objective.teacher.position_ids.requires_grad)
 
     def test_policy_discovery_separates_initialization_before_mtime(self):
         with tempfile.TemporaryDirectory() as directory, patch('encoder.pretrained_registry.ROOT', Path(directory)):

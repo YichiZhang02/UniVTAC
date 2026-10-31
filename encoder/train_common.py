@@ -18,6 +18,7 @@ import yaml
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, Sampler, Subset
 from vit_methods import METHODS
+from encoder.catalog import MULTIFRAME_METHODS, base_method
 from modality import INPUT_CHANNELS, read_tactile
 from linear_depth_deform import DEPTH_DEFORM_SPECS, depth_deform_spec
 from modality import tactile_from_arrays
@@ -34,7 +35,7 @@ class TactileFrames(Dataset):
     def __init__(self, files, limit=None, temporal=False, seed=42,
                  input_mode='marker_rgb', lengths=None, action_conditioned=False,
                  future_horizon=1, action_mean=None, action_std=None, num_frames=1,
-                 tactile_preprocessing='cpu'):
+                 tactile_preprocessing='cpu', frame_stride=2, complete_history=False, simulation_step_stride=None):
         self.temporal = temporal
         self.action_conditioned = action_conditioned
         self.future_horizon = future_horizon
@@ -42,13 +43,21 @@ class TactileFrames(Dataset):
         self.action_std = action_std
         self.input_mode = input_mode
         self.num_frames = num_frames
+        self.frame_stride = frame_stride
+        self.complete_history = complete_history
+        self.simulation_step_stride = simulation_step_stride
+        if num_frames < 1 or frame_stride < 1:
+            raise ValueError('num_frames and frame_stride must be positive')
         self.tactile_preprocessing = tactile_preprocessing
         self.rows = []
         self.handles = {}
         self.mapped_arrays = {}
         for path in files:
             cached = lengths.get(str(path)) if lengths else None
-            with h5py.File(path, 'r') if cached is None else nullcontext() as h5:
+            with h5py.File(path, 'r') if cached is None or complete_history else nullcontext() as h5:
+                if complete_history:
+                    from encoder.temporal_sampling import validate_simulation_spacing
+                    steps = validate_simulation_spacing(h5, frame_stride, simulation_step_stride)
                 for side in ('left', 'right'):
                     kind = ('depth' if input_mode in DEPTH_DEFORM_SPECS else 'marker' if input_mode == 'marker_only'
                             else 'rgb' if input_mode == 'rgb_only' else 'rgb_marker')
@@ -61,8 +70,11 @@ class TactileFrames(Dataset):
                         if key not in h5:
                             continue
                         length = len(h5[key])
-                    usable = length - (future_horizon if action_conditioned else int(temporal))
-                    self.rows.extend((str(path), side, t) for t in range(max(0, usable)))
+                    if complete_history and length != len(steps):
+                        raise ValueError(f'Misaligned tactile/step lengths in {path}: {key}')
+                    usable = length - (future_horizon if action_conditioned or temporal else 0)
+                    start = (num_frames - 1) * frame_stride if complete_history else 0
+                    self.rows.extend((str(path), side, t) for t in range(start, max(start, usable)))
         if limit and len(self.rows) > limit:
             self.rows = random.Random(seed).sample(self.rows, limit)
         if not self.rows:
@@ -115,23 +127,23 @@ class TactileFrames(Dataset):
             if path not in self.handles:
                 self.handles[path] = h5py.File(path, 'r')
             h5 = self.handles[path]
-            indices = history_indices(step, self.num_frames, 2) if not self.action_conditioned else [step]
+            indices = history_indices(step, self.num_frames, self.frame_stride)
             packed = {'images': [prepare_tactile_tps(h5, side, t, 224) for t in indices]}
             if self.action_conditioned or self.temporal:
-                future = step + (self.future_horizon if self.action_conditioned else 1)
+                future = step + self.future_horizon
                 packed['future_images'] = [prepare_tactile_tps(h5, side, future, 224)]
             if self.action_conditioned:
                 packed['action'] = torch.from_numpy(self._joint_action(path, step + self.future_horizon))
             return packed
-        if self.num_frames > 1 and not self.action_conditioned:
-            image = torch.stack([self._read(path, side, t) for t in history_indices(step, self.num_frames, 2)])
+        if self.num_frames > 1:
+            image = torch.stack([self._read(path, side, t) for t in history_indices(step, self.num_frames, self.frame_stride)])
         else:
             image = self._read(path, side, step)
         if self.action_conditioned:
             future = self._read(path, side, step + self.future_horizon)
             action = self._joint_action(path, step + self.future_horizon)
             return image, future, torch.from_numpy(action)
-        return (image, self._read(path, side, step + 1)) if self.temporal else image
+        return (image, self._read(path, side, step + self.future_horizon)) if self.temporal else image
 
 
 def joint_action_stats(files):
@@ -245,16 +257,27 @@ def run(args):
     train_files = shuffled_files[val_file_count:]
     train_limit = round(args.samples * (1 - args.val_fraction)) if args.samples else None
     val_limit = args.samples - train_limit if args.samples else None
-    action_conditioned = args.method == 'V-JEPA'
+    multi_frame = args.method in MULTIFRAME_METHODS
+    method_base = base_method(args.method)
+    num_frames, frame_stride = (4, 1) if multi_frame else (1, 1)
+    if multi_frame:
+        args.model_options['temporal_compression'] = args.temporal_compression
+    elif args.temporal_compression != '4in1':
+        raise ValueError('--temporal-compression is only supported by *4Frame methods')
+    action_conditioned = method_base == 'V-JEPA'
     action_mean, action_std = joint_action_stats(train_files) if action_conditioned else (None, None)
     train_data = TactileFrames(train_files, train_limit, action_conditioned, args.seed,
                                args.input_mode, lengths, action_conditioned,
                                args.future_horizon, action_mean, action_std,
-                               tactile_preprocessing=args.tactile_preprocessing)
+                               tactile_preprocessing=args.tactile_preprocessing,
+                               num_frames=num_frames, frame_stride=frame_stride, complete_history=multi_frame,
+                               simulation_step_stride=2 if multi_frame else None)
     val_data = TactileFrames(val_files, val_limit, action_conditioned, args.seed + 1,
                              args.input_mode, lengths, action_conditioned,
                              args.future_horizon, action_mean, action_std,
-                             tactile_preprocessing=args.tactile_preprocessing)
+                             tactile_preprocessing=args.tactile_preprocessing,
+                             num_frames=num_frames, frame_stride=frame_stride, complete_history=multi_frame,
+                               simulation_step_stride=2 if multi_frame else None)
     preprocessing_options = (dict(collate_fn=collate_tactile_tps, worker_init_fn=initialize_data_worker)
                              if use_cuda_tps else {})
     loader_options = dict(batch_size=args.batch_size, num_workers=args.workers,
@@ -283,6 +306,12 @@ def run(args):
         probe_options = dict(batch_size=args.batch_size, num_workers=2, pin_memory=True, **preprocessing_options)
         train_probe = DataLoader(Subset(train_data, train_pick), shuffle=False, **probe_options)
         val_probe = DataLoader(Subset(val_data, val_pick), shuffle=False, **probe_options)
+    saved = torch.load(args.resume, map_location='cpu', weights_only=False) if args.resume else None
+    if saved is not None:
+        from encoder.factory import require_current_local_checkpoint
+        require_current_local_checkpoint(saved)
+    if method_base == 'SD-VAE':
+        args.model_options.setdefault('sd_patch_size', 2)
     device = torch.device(args.device)
     model = METHODS[args.method](args.size, INPUT_CHANNELS[args.input_mode],
                                  **args.model_options).to(device)
@@ -292,18 +321,22 @@ def run(args):
     optimizer = optimizer_class((p for p in model.parameters() if p.requires_grad),
                                 lr=args.lr, weight_decay=args.weight_decay)
     scaler = torch.amp.GradScaler('cuda', enabled=False)
+    micro_batch_size = args.batch_size if args.micro_batch_size is None else args.micro_batch_size
+    if micro_batch_size < 1:
+        raise ValueError('micro_batch_size must be positive')
     start_epoch = 0
     global_step = 0
     best_val_loss = float('inf')
     best_probe_accuracy = -1.0
     stale_epochs = 0
     if args.resume:
-        saved = torch.load(args.resume, map_location='cpu', weights_only=False)
         if args.input_mode in ('rgb_only', 'marker_rgb'):
             require_rgb_model(saved)
-        for key, expected in (('method', args.method), ('size', args.size),
+        if multi_frame and (saved.get('simulation_step_stride') != 2 or saved.get('frame_stride') != 1):
+            raise ValueError('Resume requires a checkpoint trained at two physical simulation steps')
+        for key, expected in (('temporal_compression', args.temporal_compression), ('method', args.method), ('size', args.size),
                               ('input_mode', args.input_mode)):
-            actual = saved.get(key)
+            actual = (saved.get(key) or '4in1') if key == 'temporal_compression' else saved.get(key)
             if key == 'method':
                 from encoder.catalog import canonical_name
                 actual = canonical_name('univtac', actual)
@@ -318,13 +351,19 @@ def run(args):
         best_val_loss = saved.get('best_val_loss', float('inf'))
         best_probe_accuracy = saved.get('best_probe_accuracy', -1.0)
         stale_epochs = saved.get('stale_epochs', 0)
-    family = 'resnet' if args.method == 'ResNet' else 'sd_vae' if args.method == 'SD-VAE' else 'vit'
+    family = 'resnet' if method_base == 'ResNet' else 'sd_vae' if method_base == 'SD-VAE' else 'vit'
     out = args.output_dir or (args.resume.parent if args.resume else None) or (result_root(args.input_mode, 'univtac', args.method, args.size, 'scratch') /
-                              datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
+                              (((args.temporal_compression + '/') if multi_frame else '') + datetime.now().strftime('%Y%m%d-%H%M%S-%f')))
     out.mkdir(parents=True, exist_ok=True)
     config = vars(args).copy()
-    config.update(pretrained_mode='univtac', initialization='scratch', num_frames=1, frame_stride=1)
+    config.update(pretrained_mode='univtac', initialization='scratch', num_frames=num_frames, frame_stride=frame_stride,
+                  temporal_compression=args.temporal_compression if multi_frame else None,
+                  temporal_backend='conv3d' if multi_frame else None,
+                  output_frames=int(args.temporal_compression[-1]) if multi_frame else 1,
+                  simulation_step_stride=2 if multi_frame else None)
     config["color_order"] = "RGB"
+    if method_base == 'SD-VAE':
+        config['sd_patch_size'] = args.model_options['sd_patch_size']
     if args.input_mode in DEPTH_DEFORM_SPECS:
         config['depth_deform_encoding'] = depth_deform_spec(args.input_mode)
     config.update(data_root=str(args.data_root), output_dir=str(out),
@@ -334,7 +373,8 @@ def run(args):
                   train_files=[str(path) for path in train_files],
                   val_files=[str(path) for path in val_files], split_strategy='file',
                   data_sampling='file_chunks_8' if args.input_mode in DEPTH_DEFORM_SPECS
-                                else 'random_frames')
+                                else 'random_clips' if multi_frame else 'random_frames',
+                  complete_history=multi_frame, contact_step_continuity_checked=multi_frame)
     if action_conditioned:
         config['action_mean'] = action_mean.tolist()
         config['action_std'] = action_std.tolist()
@@ -371,14 +411,25 @@ def run(args):
             if not isinstance(batch, (list, tuple)):
                 batch = [batch]
             optimizer.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=device.type,
-                                enabled=device.type == 'cuda' and args.precision == 'bf16',
-                                dtype=torch.bfloat16):
-                loss, metrics = model(*batch)
-                loss = loss.mean()
-            if not torch.isfinite(loss):
-                raise FloatingPointError(f'Nonfinite {args.method} loss at step {global_step}: {loss}')
-            scaler.scale(loss).backward()
+            # Keep the global batch fixed while bounding four-frame activation memory.
+            # Each chunk contributes in proportion to its anchors, including short final chunks.
+            batch_count = len(batch[0])
+            loss = torch.zeros((), device=device)
+            metrics = {}
+            for offset in range(0, batch_count, micro_batch_size):
+                chunk = [value[offset:offset + micro_batch_size] for value in batch]
+                weight = len(chunk[0]) / batch_count
+                with torch.autocast(device_type=device.type,
+                                    enabled=device.type == 'cuda' and args.precision == 'bf16',
+                                    dtype=torch.bfloat16):
+                    chunk_loss, chunk_metrics = model(*chunk)
+                    chunk_loss = chunk_loss.mean()
+                if not torch.isfinite(chunk_loss):
+                    raise FloatingPointError(f'Nonfinite {args.method} loss at step {global_step}: {chunk_loss}')
+                scaler.scale(chunk_loss * weight).backward()
+                loss += chunk_loss.detach() * weight
+                for key, value in chunk_metrics.items():
+                    metrics[key] = metrics.get(key, 0.) + value.detach().float().mean() * weight
             scaler.unscale_(optimizer)
             if args.grad_clip > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
@@ -423,17 +474,19 @@ def run(args):
                 batch = prepare_encoder_batch(batch, device, args.input_mode)
                 if not isinstance(batch, (list, tuple)):
                     batch = [batch]
-                with torch.autocast(device_type=device.type,
-                                    enabled=device.type == 'cuda' and args.precision == 'bf16',
-                                    dtype=torch.bfloat16):
-                    val_loss, val_metrics = model(*batch)
-                    val_loss = val_loss.mean()
-                if not torch.isfinite(val_loss):
-                    raise FloatingPointError(f'Nonfinite validation loss for {args.method}')
-                val_loss_sum += float(val_loss) * len(batch[0])
-                for key, value in val_metrics.items():
-                    val_metric_sums[key] = val_metric_sums.get(key, 0.0) + float(value.float().mean()) * len(batch[0])
-                val_seen += len(batch[0])
+                for offset in range(0, len(batch[0]), micro_batch_size):
+                    chunk = [value[offset:offset + micro_batch_size] for value in batch]
+                    with torch.autocast(device_type=device.type,
+                                        enabled=device.type == 'cuda' and args.precision == 'bf16',
+                                        dtype=torch.bfloat16):
+                        val_loss, val_metrics = model(*chunk)
+                        val_loss = val_loss.mean()
+                    if not torch.isfinite(val_loss):
+                        raise FloatingPointError(f'Nonfinite validation loss for {args.method}')
+                    val_loss_sum += float(val_loss) * len(chunk[0])
+                    for key, value in val_metrics.items():
+                        val_metric_sums[key] = val_metric_sums.get(key, 0.0) + float(value.float().mean()) * len(chunk[0])
+                    val_seen += len(chunk[0])
         val_loss = val_loss_sum / val_seen
         best_val_loss = min(best_val_loss, val_loss)
         probe_accuracy = None
@@ -463,7 +516,12 @@ def run(args):
         core = model.module if isinstance(model, nn.DataParallel) else model
         if not args.no_save:
             checkpoint = {'format_version': 3, 'color_order': 'RGB', 'method': args.method, 'size': args.size,
-                          'pretrained_mode': 'univtac', 'initialization': 'scratch', 'num_frames': 1, 'frame_stride': 1,
+                          'pretrained_mode': 'univtac', 'initialization': 'scratch', 'num_frames': num_frames, 'frame_stride': frame_stride,
+                          'temporal_compression': args.temporal_compression if multi_frame else None,
+                          'temporal_backend': 'conv3d' if multi_frame else None,
+                          'output_frames': int(args.temporal_compression[-1]) if multi_frame else 1,
+                          'sd_patch_size': getattr(core.encoder, 'sd_patch_size', None),
+                          'simulation_step_stride': 2 if multi_frame else None,
                           'architecture': family,
                           'image_size': 224, 'input_mode': args.input_mode,
                           'in_chans': INPUT_CHANNELS[args.input_mode],
@@ -477,10 +535,10 @@ def run(args):
                           'stale_epochs': stale_epochs}
             save_checkpoint(checkpoint, out / 'last.pth')
             if improved:
-                if args.method in ('RVAE', 'RAE', 'SD-VAE'):
+                if method_base in ('RVAE', 'RAE', 'SD-VAE'):
                     # Keep the matching encoder/decoder for best-epoch reconstruction.
                     save_checkpoint(checkpoint, out / 'best.pth')
-                save_checkpoint({key: checkpoint[key] for key in ('format_version', 'pretrained_mode', 'initialization', 'num_frames', 'frame_stride', 'method', 'size', 'architecture',
+                save_checkpoint({key: checkpoint[key] for key in ('format_version', 'pretrained_mode', 'initialization', 'num_frames', 'frame_stride', 'temporal_backend', 'temporal_compression', 'output_frames', 'sd_patch_size', 'simulation_step_stride', 'method', 'size', 'architecture',
                             'image_size', 'input_mode', 'in_chans', 'color_order', 'depth_deform_encoding', 'encoder', 'epoch', 'step',
                             'val_loss', 'best_val_loss', 'knn_accuracy',
                             'best_probe_accuracy')}, out / 'encoder.pth')
@@ -494,6 +552,8 @@ def run(args):
 def main(default_method=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--method', required=default_method is None, default=default_method, choices=METHODS)
+    parser.add_argument('--temporal-compression', choices=['4in1', '4in2'],
+                        help='4Frame compression (default: 4in2)')
     parser.add_argument('--init', choices=['scratch'], default='scratch')
     parser.add_argument('--size', default='S', choices=['S', 'B'])
     parser.add_argument('--input-mode', default='marker_rgb', choices=INPUT_CHANNELS)
@@ -502,6 +562,7 @@ def main(default_method=None):
     parser.add_argument('--samples', type=int)
     parser.add_argument('--epochs', type=int)
     parser.add_argument('--batch-size', type=int, choices=[64])
+    parser.add_argument('--micro-batch-size', type=int, help='Anchors per forward/backward; accumulated to global batch')
     parser.add_argument('--workers', type=int)
     parser.add_argument('--tactile-preprocessing', choices=['auto', 'cpu', 'cuda'], default='auto')
     parser.add_argument('--lr', type=float)
@@ -529,6 +590,8 @@ def main(default_method=None):
     args = parser.parse_args()
     from encoder.catalog import selection
     _, args.method, args.size, _ = selection('univtac', args.method, args.size, args.init)
+    if args.temporal_compression is None:
+        args.temporal_compression = '4in2' if args.method in MULTIFRAME_METHODS else '4in1'
     args.config = args.config or Path(__file__).resolve().parent / args.method / 'config.yml'
     settings = yaml.safe_load(args.config.read_text())[args.size]
     settings.update(settings.pop('input_overrides', {}).get(args.input_mode, {}))
@@ -540,7 +603,7 @@ def main(default_method=None):
                 'val_fraction': .2, 'max_val_steps': None,
                 'early_stop_patience': 0, 'checkpoint_metric': 'val_loss',
                 'probe_per_class_train': 0, 'probe_per_class_val': 0,
-                'future_horizon': 1}
+                'future_horizon': 1, 'micro_batch_size': None}
     defaults.update(settings)
     for key, value in defaults.items():
         if getattr(args, key) is None:

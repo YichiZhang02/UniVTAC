@@ -148,7 +148,7 @@ class TemporalTest(unittest.TestCase):
             ds = UniVTACDataset({'task': [path]}, cameras=['head'], tactile_mode='encode',
                 tactile_input_mode='rgb_only', chunk_size=2, stats=stats, policy='act', image_size=224,
                 tactile_num_frames=4, tactile_frame_stride=2)
-            pretrain = TactileFrames([path], input_mode='rgb_only', action_conditioned=True,
+            pretrain = TactileFrames([path], input_mode='rgb_only', num_frames=4, action_conditioned=True,
                 action_mean=np.zeros(8), action_std=np.ones(8))
             policy, _ = make_policy('rgb_only')
             policy.tactile_num_frames, policy.tactile_frame_stride = 4, 2
@@ -210,7 +210,7 @@ class TemporalTest(unittest.TestCase):
             torch.testing.assert_close(reset, torch.full_like(reset, offset))
 
     def test_vjepa_uses_history_and_legacy_constructor_restores(self):
-        Encoder = importlib.import_module('encoder.V-JEPA.model').VJEPAEncoder
+        Encoder = importlib.import_module('encoder.V-JEPA4Frame.model').VJEPAEncoder
         model = Encoder('S').eval()
         images = torch.rand(1,4,3,224,224)
         with torch.no_grad():
@@ -218,7 +218,8 @@ class TemporalTest(unittest.TestCase):
             changed = images.clone()
             changed[:, 0] = 0
             self.assertFalse(torch.allclose(original, model(changed), atol=1e-6))
-            self.assertEqual(model.patch_tokens(images).shape, (1,784,384))
+            self.assertEqual(model.patch_tokens(images).shape, (1,392,384))
+        Encoder = importlib.import_module('encoder.V-JEPA.model').VJEPAEncoder
         old = Encoder('S', num_frames=1)
         restored = Encoder('S', num_frames=1)
         restored.load_state_dict(old.state_dict(), strict=True)

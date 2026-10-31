@@ -12,11 +12,20 @@ The eight local encoder methods are `ResNet`, `RVAE`, `RAE`, `SD-VAE`, `MAE`, `D
 | ResNet | CNN spatial map → pooled 512-dimensional vector → image decoder; same-input pixel MSE | 1 × 512 | 64 spatial tokens on ACT's 256×256 input, 512 (S) or 2048 (B) channels |
 | RVAE | ViT 196 patches → learned residual 3×3 stride-2 convolution → 49 latent means/log variances → sampled 49 latents → learned residual 7×7-to-14×14 upsampling → 196 reconstructed image patches; pixel MSE + KL | ViT CLS, 1 × 384/768 | 49 latent means, 7×7 × 384/768 |
 | RAE | ViT → 196 × D deterministic patch tokens → Transformer pixel decoder; reconstruction MSE, no residual CNN reduction or KL | ViT CLS, 1 × 384/768 | 196 × 384/768 |
-| SD-VAE | SD-style residual convolutional encoder → 28×28×4 posterior → convolutional decoder; reconstruction MSE + KL | Mean latent, 1 × 4 | 784 × 4 |
+| SD-VAE | SD-style residual convolutional encoder → 28×28×4 posterior → convolutional decoder; reconstruction MSE + KL | Mean patchified latent, 1 × 16 | 196 × 16 |
 | MAE | Mask 75% of 196 patches → encode 49 visible patches plus CLS → decoder reconstructs masked pixels | Unmasked CLS, 1 × 384/768 | Unmasked CLS + 196 patches, 197 × 384/768 |
 | DINOv2 | Two global and one local student views, two global EMA teacher views; CLS distillation, masked-patch iBOT-style distillation, and KoLeo feature regularization | CLS, 1 × 384/768 | CLS + 196 patches, 197 × 384/768 |
 | I-JEPA | Single image, two non-overlapping 6×6 target blocks; context encoder sees 124 visible patches and predicts the other 72 with an EMA teacher; the context embedding also receives a Gaussian SIGReg constraint | ViT CLS, 1 × 384/768 | 196 patch tokens, 14×14 × 384/768 |
 | V-JEPA\* | Encode one current frame, predict the next-frame EMA target projected CLS latent conditioned on the next absolute 8D joint target; SIGReg regularizes the projected context latent | Projected ViT CLS, 1 × 384/768 | 196 projected patch tokens, 14×14 × 384/768 |
+
+New SD-VAE and SD-VAE4Frame exports use `sd_patch_size=2`: each 2×2 region
+of the four-channel latent is packed losslessly into one 16-dimensional token.
+The posterior and reconstruction decoder retain the original latent grid.
+At 224×224, single-frame/4in1 outputs have 196 tokens and 4in2 has 392,
+with time slices kept separate. `cls` averages these 16-dimensional tokens;
+spatial pooling uses the resulting 14×14 grid per time slice. SD-VAE checkpoints
+and policy configs require `sd_patch_size=2`; the old unpacked contract is no
+longer supported.
 
 All nine input modes have three channels. `marker_only` renders the first 63 current marker positions as radius-2 white dots on a black canvas, scales coordinates from 320×240 to the requested image size (224×224 by default), and copies the same raster into R, G, and B (`R = G = B`). It returns a float32 tensor of shape `[3, H, W]` in `[0, 1]`; repeating the channels adds no new marker information. Encoder pretraining and policy data loading use the same representation. Existing one-channel `marker_only` encoder checkpoints require retraining or explicit weight conversion before use with this input. ResNet, RVAE, RAE, SD-VAE and MAE reconstruct the selected input mode; for sparse `marker_only` images, foreground pixels receive 50× additional weight in the reconstruction MSE to avoid a blank-image solution. DINOv2, I-JEPA, and V-JEPA use feature-learning objectives. `depth_deform_20`, `depth_deform_80`, `depth_deform_160`, and `depth_deform_240` use `R = clip((30 - camera_depth_mm) / 5, 0, 1)`, identical to `depth_deform_nonlinear`. Raw camera depth is resized before mapping; saved `press_depth` is not used by any of these modes. Linear G/B retain byte-space `128 + 127 * clip(dx_px / U, -1, 1)` (B uses dy), divided by 255 in model tensors; U is 20, 80, 160, or 240 px. Zero displacement is 128/255. The linear modes retain reference-coordinate linear/IDW interpolation. Linear encoding metadata is versioned `linear_camera_30mm_5mm_<U>px_v2`; old 28 mm / 3 mm linear checkpoints require retraining and are rejected by encoding checks. Training uses existing saved markers; inference uses all markers before visibility filtering, noise, shuffling or padding, with stable IDs. Unified evaluation writes per-action reference/current coordinates, IDs and visibility to `marker_traces/<seed>_<result>.hdf5`, including out-of-view positions. Visibility is diagnostic only. New training configs/checkpoints record `depth_deform_encoding`. Retrain encoders and policies for this changed representation; old checkpoint weights are not converted automatically. `depth_marker_to_deform.py` retains the historical conversion for reproducibility. The historical ResNet18 checkpoint format is still accepted by ACT.
 
@@ -33,7 +42,7 @@ The training configs use batch size 64 on one A100 per run, so two independent r
 
 I-JEPA adds LeWM/LeJEPA-style sketched isotropic Gaussian regularization (SIGReg) to a learned projection of the pooled context tokens. Each step compares random one-dimensional projections of the image batch against a standard normal distribution using an Epps–Pulley characteristic-function statistic. The existing masked latent prediction and EMA teacher remain in place. Its configuration controls the SIGReg weight, projection dimension, and number of random projections; validation logs include `val_sigreg`, projected feature standard deviation, and teacher feature standard deviation to detect collapse.
 
-V-JEPA uses single-frame `[B,C,H,W]` inputs: the current frame at `t` predicts the EMA target at `t+1` (`future_horizon: 1`). All UniVTAC encoders use `num_frames: 1` and `frame_stride: 1`; four-frame V-JEPA checkpoints require retraining. HDF5 files contain `embodiment/joint` rather than a separate `/action` array, so the action condition is the absolute joint target at `t+1`, columns `:8`. Action normalization uses training trajectories only. Pretraining applies a BatchNorm projector to student and target CLS features, with latent MSE plus SIGReg (weight 0.09). The projector is part of the encoder output: policy `cls` returns the projected CLS, `full` returns 196 projected patch tokens, and `pool` retains the projected CLS and pools the projected patches to 3×3. Pooling follows the projector because its GELU makes the two operations noncommutative. The CLS-only pretraining path and its BatchNorm behavior are unchanged; policy token sequences are flattened to `[B*N,D]` for projector BatchNorm. This is a local action-conditioned JEPA objective, not the official video V-JEPA implementation.
+V-JEPA uses single-frame `[B,C,H,W]` inputs: the current frame at `t` predicts the EMA target at `t+1` (`future_horizon: 1`). The original single-frame UniVTAC encoders use `num_frames: 1` and `frame_stride: 1`; four-frame V-JEPA checkpoints require retraining. HDF5 files contain `embodiment/joint` rather than a separate `/action` array, so the action condition is the absolute joint target at `t+1`, columns `:8`. Action normalization uses training trajectories only. Pretraining applies a BatchNorm projector to student and target CLS features, with latent MSE plus SIGReg (weight 0.09). The projector is part of the encoder output: policy `cls` returns the projected CLS, `full` returns 196 projected patch tokens, and `pool` retains the projected CLS and pools the projected patches to 3×3. Pooling follows the projector because its GELU makes the two operations noncommutative. The CLS-only pretraining path and its BatchNorm behavior are unchanged; policy token sequences are flattened to `[B*N,D]` for projector BatchNorm. This is a local action-conditioned JEPA objective, not the official video V-JEPA implementation.
 
 For MAE, DINOv2, I-JEPA, and RVAE, `cls` mode returns the ViT's final normalized CLS token; V-JEPA additionally applies its pretrained projector. RVAE's 49 latent means and I-JEPA's patch tokens remain available in `full` mode. ResNet uses its pooled CNN/FC feature as before. RVAE and I-JEPA CLS tokens receive no direct CLS-specific pretraining loss; existing policy checkpoints trained with pooled features need retraining for the changed `cls` semantics.
 
@@ -73,3 +82,107 @@ Use `TACTILE_INPUT_MODE=depth_deform_nonlinear_radial ENCODER_METHOD=RVAE
 ENCODER_SIZE=S` for policy training. `encoder.pth` stores the best encoder;
 new RVAE runs also save the corresponding complete encoder/decoder in `best.pth`.
 `last.pth` retains the final complete training state.
+
+
+## Four-frame scratch encoders
+
+`ResNet4Frame`, `RAE4Frame`, `SD-VAE4Frame`, `RVAE4Frame`, `MAE4Frame`,
+`DINOv24Frame`, `I-JEPA4Frame`, and `V-JEPA4Frame` each have an independent
+model/config/train directory. `VAE4Frame` aliases `RVAE4Frame`, matching the
+existing single-frame VAE alias. These implementations adapt TacMind's
+`encoder/common/temporal.py` and `encoder/scratch/*4Frame` models.
+
+**Stride means physical simulation steps: exactly 2.** Bundled contact HDF5
+observations are already saved every two simulation steps, so four-frame inputs
+use adjacent saved indices `[t-3,t-2,t-1,t]`, corresponding to physical steps
+`[s-6,s-4,s-2,s]`. Checkpoints explicitly record `simulation_step_stride=2`
+and `frame_stride=1` (the latter is measured in saved observations). Do not use
+saved-frame stride 2: that would space observations four simulation steps apart.
+
+Complete history is mandatory: the first three anchors are excluded rather than
+padded. A clip stays within one HDF5 file and one sensor side. Sampling validates
+monotonic, uniform physical-step intervals and rejects data inconsistent with the
+required cadence. New simulator observations expose `physics_step`; historical
+120 Hz collection files use their `step` counter. Training/validation split by
+HDF5 trajectory before sampling clips.
+
+Select `--temporal-compression 4in2` (default) or `4in1`:
+
+- ViTs use Conv3d directly on the raw clip, with kernel and stride `(4,16,16)`
+  for 4in1 or `(2,16,16)` for 4in2. The compressed slices receive spatial and
+  temporal positions and enter every Transformer block jointly. Each slice has
+  a CLS for the SSL objectives; the exported global CLS averages the slice CLSs.
+- ResNet and SD-VAE extract each frame's features with a shared 2D CNN before
+  applying Conv3d with kernel and stride `(4,1,1)` or `(2,1,1)`. This preserves
+  spatial resolution and mixes channels and time within each group. The two
+  4in2 groups have no additional cross-group encoder attention. SD-VAE compresses
+  before the posterior, then patchifies its latent; RVAE retains its learned
+  7x7 spatial bottleneck per compressed slice.
+- 4in1 exports one spatial grid; 4in2 exports two chronological grids. `cls`
+  averages global features; `full` and spatial pooling retain both grids.
+  `pool3x3` has 10 tokens for 4in1 and 19 for 4in2.
+- Reconstruction objectives reconstruct all four frames using only the compressed
+  representation and learned decoder time positions. MAE/I-JEPA mask the same
+  spatial sites in every input frame to prevent history leaking hidden patches.
+  DINO uses clip-consistent crops/brightness and aligned teacher targets.
+- V-JEPA retains the local action-conditioned future-latent objective: four-frame
+  history predicts the next saved observation at `t+1` (two physical steps later),
+  conditioned on the normalized 8D joint target at that time. Its 4in2 predictor
+  consumes both compressed CLS vectors separately. For the single-frame future
+  target, the observation repeats only across the Conv3d temporal kernel (2 or 4)
+  to produce one target slice with shared weights. This is not the upstream video
+  V-JEPA training recipe.
+
+At 224×224, 4in2 exports 392 patch tokens for MAE/DINOv2/I-JEPA/V-JEPA/RAE,
+98 for ResNet/RVAE, and 392 sixteen-dimensional latent tokens for SD-VAE.
+These counts exclude global prefix tokens; 4in1 has half as many patch tokens.
+All new 4Frame exports and policy configs record `temporal_backend=conv3d`.
+The former temporal-attention architecture and its restoration paths are removed;
+old 4Frame checkpoints are rejected and require retraining.
+
+Policy training reads the cadence from the encoder checkpoint, validates its
+trajectory step intervals and excludes incomplete histories. Online inference
+tracks real physical steps, advances history during queued actions, and rejects
+intervals other than two. At episode start it holds the current command and
+collects three further observations before predicting, rather than padding with
+copies of the first frame. Evaluation requires decimation=2 (e.g. physical
+120 Hz / evaluation 60 Hz); incompatible settings fail explicitly. Reset clears
+the history. Duplicate encoding calls at one physical step do not advance time.
+
+```bash
+./train_encoder.sh --method RVAE4Frame --size S \
+  --input depth_deform_nonlinear_radial --temporal-compression 4in2
+
+python scripts/audit_contact_temporal.py
+python -m unittest scripts.test_multiframe_encoders -v
+python scripts/train_multiframe_encoders.py --smoke --gpus 0,1
+python scripts/train_multiframe_encoders.py --gpus 0,1
+```
+
+The sweep defaults to S, radial depth/deform, 100,000 clip anchors, at most 20 epochs,
+seed 42, physical stride 2, and 4in2 (8 jobs). Training stops after three
+epochs without validation-loss improvement. Pass `--compressions 4in1 4in2`
+to run both compression modes (16 jobs). It uses one
+training process per GPU and records running/queued/failed/completed jobs in
+`status.json` under `encoder_results/multiframe_training/<timestamp>/`. Runs
+remain under the standard representation/method/size/scratch path, with an
+additional `4in1` or `4in2` directory. Set `ENCODER_CKPT` downstream to choose
+a variant. Checkpoints retain cadence and compression constructor metadata.
+
+New model configs use global batch 64 with microbatch 8 and gradient accumulation
+to bound activation memory. BatchNorm, SIGReg, KoLeo and DINO target balancing
+operate on microbatches, so accumulation does not reproduce their batch-64
+statistics. Increase `--micro-batch-size` if full-batch SSL statistics are desired.
+The original single-frame architectures and state dictionary keys are unchanged.
+
+`2.sh` runs only the completed models from the current temporal run with
+StarVLA-GR00T `pool3x3`; unfinished encoders are skipped independently.
+`scripts/watch_temporal_starvla.py --start --state-dir <folder> --encoder-status
+<training-status.json> --blocks 2.sh --interval 3600` checks immediately and then
+hourly. A successful encoder exit (including early stopping) triggers two local
+policy optimizer steps, validation, token-shape checks and Conv3d-gradient checks
+before one four-GPU/global-batch-64 DLC submission. Local validation uses one GPU
+with the same 16 samples per GPU, coordinating GPU memory with the encoder queue.
+Checkpoint/source snapshots, local validation results and deduplicated DLC job IDs
+are recorded in the monitor's state directory. Inspect `state.json` and
+`monitor.log`, or use `--status`; `--stop` stops the monitor.

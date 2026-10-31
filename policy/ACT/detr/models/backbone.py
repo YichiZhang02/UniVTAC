@@ -192,10 +192,11 @@ class ViTTactileBackbone(nn.Module):
         encoder_dir = Path(__file__).resolve().parents[4] / 'encoder'
         if str(encoder_dir) not in sys.path:
             sys.path.insert(0, str(encoder_dir))
-        from encoder.factory import local_encoder
+        from encoder.factory import local_encoder, require_current_local_checkpoint
 
         if state is None:
             state = torch.load(ckpt, map_location='cpu', weights_only=True)
+        require_current_local_checkpoint(state)
         if canonical_name('univtac', state.get('method')) != method or state.get('size') != size:
             raise ValueError(f'Checkpoint is {state.get("method")}/ViT-{state.get("size")}, expected {method}/ViT-{size}')
         if input_mode in ('rgb_only', 'marker_rgb'):
@@ -207,7 +208,8 @@ class ViTTactileBackbone(nn.Module):
             raise ValueError('VAE checkpoint uses the old average-pooling encoder; retrain VAE with learned downsampling')
         channels = state.get('in_chans', 3)
         self.backbone = local_encoder(method, size, channels,
-            num_frames=state.get('num_frames', 1), image_size=state.get('image_size', 224))
+            num_frames=state.get('num_frames', 1), image_size=state.get('image_size', 224),
+            sd_patch_size=state.get('sd_patch_size', 2))
         if 'encoder' in state:
             self.backbone.load_state_dict(state['encoder'], strict=True)
         self.num_channels = self.backbone.embed_dim
@@ -223,7 +225,7 @@ class ViTTactileBackbone(nn.Module):
         if self.tactile_type == 'full':
             if self.method in ('VAE', 'RVAE', 'SD-VAE'):
                 tokens = self.backbone.latent_tokens(x)
-                height = width = 28 if self.method == 'SD-VAE' else 7
+                height = width = self.backbone.grid_size if self.method == 'SD-VAE' else 7
             elif self.method in ('MAE', 'DINOv2'):
                 tokens = self.backbone.tokens(x)
                 feat = tokens.transpose(1, 2).unsqueeze(2)
@@ -253,9 +255,13 @@ class RegisteredTactileBackbone(nn.Module):
             sys.path.insert(0, str(encoder_dir))
         from encoder.external import ExternalEncoder
         if state.get('pretrained_mode', 'univtac') == 'univtac':
-            from importlib import import_module
-            self.backbone = import_module('encoder.V-JEPA.model').VJEPAEncoder(
-                state['size'], in_chans=state['in_chans'], num_frames=state['num_frames'])
+            from encoder.factory import local_encoder, require_current_local_checkpoint
+            require_current_local_checkpoint(state)
+            if state['method'].endswith('4Frame') and (state.get('simulation_step_stride') != 2 or state.get('frame_stride') != 1):
+                raise ValueError('Multi-frame checkpoint must specify simulation_step_stride=2 and frame_stride=1')
+            self.backbone = local_encoder(state['method'], state['size'], state['in_chans'],
+                num_frames=state['num_frames'], temporal_compression=state.get('temporal_compression') or '4in2',
+                sd_patch_size=state.get('sd_patch_size', 2))
         else:
             self.backbone = ExternalEncoder(state['pretrained_mode'], state['method'], state['size'],
                                              metadata=state, pretrained=False)
@@ -268,7 +274,8 @@ class RegisteredTactileBackbone(nn.Module):
                 from encoder.Wan22_VAE.wan_training_fast import enable_wan_training_fast
                 enable_wan_training_fast(self.backbone.model)
                 torch.backends.cudnn.benchmark = True
-        self.num_channels = self.backbone.embed_dim
+        self.num_channels = (2048 if state['method'] == 'ResNet4Frame' and state['size'] == 'B' and tactile_type == 'full'
+                             else self.backbone.embed_dim)
         self.tactile_type = tactile_type
         self.position_embedding = position_embedding
 
@@ -334,7 +341,7 @@ def build_tactile_backbone(args):
     if state is None and args.tactile_ckpt:
         state = torch.load(args.tactile_ckpt, map_location='cpu', weights_only=True)
     if state and (state.get('pretrained_mode', 'univtac') != 'univtac' or
-                  (method == 'V-JEPA' and state.get('num_frames', 1) > 1)):
+                  state.get('num_frames', 1) > 1):
         backbone = RegisteredTactileBackbone(state, position_embedding, tactile_type,
             getattr(args, 'wan_training_optimization', 'compiled'))
         return configure_tactile_pooling(backbone, args, method, state)
@@ -356,6 +363,8 @@ def build_tactile_backbone(args):
 
 def configure_tactile_pooling(backbone, args, method, state):
     backbone.pooling_size = tactile_pool_size(getattr(args, 'tactile_type', 'cls'))
+    if method == 'ResNet4Frame' and backbone.pooling_size is not None:
+        backbone.num_channels = 512
     backbone.pooling_method = method
     backbone.pooling_pretrained_mode = (state or {}).get('pretrained_mode', 'univtac')
     return backbone

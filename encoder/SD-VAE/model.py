@@ -11,6 +11,7 @@ from torch.nn import functional as F
 from diffusers import AutoencoderKL
 from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution
 from reconstruction_loss import reconstruction_mse
+from encoder.latent_patchify import patchify_latents
 
 
 def sd_config(size, in_chans):
@@ -26,11 +27,13 @@ def sd_config(size, in_chans):
 
 
 class SDVAEEncoder(nn.Module):
-    embed_dim = 4
-    grid_size = 28
-
-    def __init__(self, size, in_chans=3, *, autoencoder=None):
+    def __init__(self, size, in_chans=3, *, autoencoder=None, sd_patch_size=2):
         super().__init__()
+        if sd_patch_size != 2:
+            raise ValueError('SD-VAE requires sd_patch_size=2')
+        self.sd_patch_size = sd_patch_size
+        self.embed_dim = 4 * sd_patch_size**2
+        self.grid_size = 28 // sd_patch_size
         model = AutoencoderKL(**sd_config(size, in_chans)) if autoencoder is None else autoencoder
         self.encoder = model.encoder
         self.quant_conv = model.quant_conv
@@ -41,7 +44,7 @@ class SDVAEEncoder(nn.Module):
     def latent_tokens(self, images):
         if images.shape[-2:] != (224, 224):
             images = F.interpolate(images, (224, 224), mode='bilinear', align_corners=False)
-        return self.posterior(images).mode().flatten(2).transpose(1, 2)
+        return patchify_latents(self.posterior(images).mode(), self.sd_patch_size)
 
     patch_tokens = latent_tokens
 
@@ -54,10 +57,10 @@ class SDVAEEncoder(nn.Module):
 
 
 class SDVAE(nn.Module):
-    def __init__(self, size, in_chans=3, kl_weight=1e-4, foreground_weight=50.):
+    def __init__(self, size, in_chans=3, kl_weight=1e-4, foreground_weight=50., sd_patch_size=2):
         super().__init__()
         model = AutoencoderKL(**sd_config(size, in_chans))
-        self.encoder = SDVAEEncoder(size, in_chans, autoencoder=model)
+        self.encoder = SDVAEEncoder(size, in_chans, autoencoder=model, sd_patch_size=sd_patch_size)
         self.decoder = model.decoder
         self.post_quant_conv = model.post_quant_conv
         self.kl_weight = kl_weight
