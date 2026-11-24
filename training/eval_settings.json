@@ -1,0 +1,15 @@
+{
+  "episodes_per_task": 50,
+  "start_seed": 1000000,
+  "reset_time_limit_seconds": 1200,
+  "task_step_limits": {
+    "grasp_classify": 300,
+    "insert_HDMI": 600,
+    "insert_hole": 300,
+    "insert_tube": 300,
+    "lift_bottle": 500,
+    "lift_can": 300,
+    "pull_out_key": 300,
+    "put_bottle_in_shelf": 600
+  }
+}

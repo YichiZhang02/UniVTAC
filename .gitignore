@@ -46,3 +46,15 @@ policy/T3/outputs
 policy/T3/checkpoints
 
 encoder/ablation/supervision
+
+# Local experiment outputs, checkpoints and downloaded model weights.
+/runs/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.hdf5
+*.h5
+pytorch_model*.bin
+optimizer*.bin

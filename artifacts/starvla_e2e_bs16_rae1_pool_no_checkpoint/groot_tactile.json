@@ -1,0 +1,167 @@
+{
+  "model": "groot",
+  "tactile": true,
+  "micro_batch": 16,
+  "workers": 4,
+  "prefetch_factor": 2,
+  "warmup_steps": 2,
+  "measured_steps": 10,
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "config": {
+    "seed": 42,
+    "steps": 50000,
+    "global_batch": 64,
+    "micro_batch": 16,
+    "action_mode": "relative_joint",
+    "action_contract": "relative_arm_absolute_gripper_v1",
+    "chunk": 50,
+    "execute": 30,
+    "data_root": "/mnt/yichi_data/UniVTAC_downloads/data/isaac51",
+    "base_vlm": "/mnt/yichi_data/UniVTAC_downloads/models/Qwen3.5-2B",
+    "encoder": "rae",
+    "tactile": true,
+    "tactile_input_mode": "depth_deform_radial",
+    "tactile_interpolation": "tps_bilinear",
+    "tactile_interpolation_grid": 28,
+    "rae_variant": "rae-1in1",
+    "rae_size": "S",
+    "tactile_tokens": "pool3x3",
+    "tactile_frames": 1,
+    "tactile_stride": 2,
+    "encoder_checkpoint": null,
+    "action_hidden_dim": 1024,
+    "action_attention_dim": 1024,
+    "action_future_tokens": 0,
+    "learning_rate": 1e-05,
+    "save_interval": 5000,
+    "vision_checkpoint": "/mnt/yichi_data/UniVTAC_downloads/models/resnet18/resnet18-f37072fd.pth",
+    "univtac_checkpoint": "/mnt/yichi_data/UniVTAC_downloads/models/univtac/checkpoints/encoder.pth",
+    "flow_repeats": 8,
+    "action_learning_rate": 0.0001,
+    "num_inference_timesteps": 10,
+    "tactile_fusion": "vlm",
+    "tactile_wrapper": "none",
+    "tactile_rope": "1d",
+    "vlm_attention_mask": "causal",
+    "head_action_queries_only": true,
+    "gradient_checkpointing": false
+  },
+  "method": "Real HDF5 Episodes; next(DataLoader) + H2D + forward + backward + clipping + AdamW; steady-state prefetch; no DDP communication",
+  "gradient_checkpointing_active": false,
+  "status": "ok",
+  "episodes": 800,
+  "frames": 190373,
+  "steps": [
+    {
+      "step": 2,
+      "total_seconds": 0.7801155201159418,
+      "data_wait_seconds": 0.0002355431206524372,
+      "transfer_compute_update_seconds": 0.7798799769952893,
+      "worker_item_cpu_seconds": 1.0011510951444507,
+      "worker_conversion_cpu_seconds": 0.17257449962198734,
+      "loss": 1.9399747848510742
+    },
+    {
+      "step": 3,
+      "total_seconds": 0.7982737459242344,
+      "data_wait_seconds": 0.00025981804355978966,
+      "transfer_compute_update_seconds": 0.7980139278806746,
+      "worker_item_cpu_seconds": 0.9848896944895387,
+      "worker_conversion_cpu_seconds": 0.16372578730806708,
+      "loss": 4.8169846534729
+    },
+    {
+      "step": 4,
+      "total_seconds": 0.8050770661793649,
+      "data_wait_seconds": 0.0003003738820552826,
+      "transfer_compute_update_seconds": 0.8047766922973096,
+      "worker_item_cpu_seconds": 1.0097537427209318,
+      "worker_conversion_cpu_seconds": 0.1646916614845395,
+      "loss": 1.835693597793579
+    },
+    {
+      "step": 5,
+      "total_seconds": 0.7998747839592397,
+      "data_wait_seconds": 0.000299014151096344,
+      "transfer_compute_update_seconds": 0.7995757698081434,
+      "worker_item_cpu_seconds": 0.9612051700241864,
+      "worker_conversion_cpu_seconds": 0.16748178703710437,
+      "loss": 1.9947319030761719
+    },
+    {
+      "step": 6,
+      "total_seconds": 0.8022661772556603,
+      "data_wait_seconds": 0.0002625351771712303,
+      "transfer_compute_update_seconds": 0.8020036420784891,
+      "worker_item_cpu_seconds": 0.9390499545261264,
+      "worker_conversion_cpu_seconds": 0.16561182448640466,
+      "loss": 2.231372117996216
+    },
+    {
+      "step": 7,
+      "total_seconds": 0.78714196709916,
+      "data_wait_seconds": 0.0002512829378247261,
+      "transfer_compute_update_seconds": 0.7868906841613352,
+      "worker_item_cpu_seconds": 0.9300283375196159,
+      "worker_conversion_cpu_seconds": 0.1693484648130834,
+      "loss": 2.0391242504119873
+    },
+    {
+      "step": 8,
+      "total_seconds": 0.8046969352290034,
+      "data_wait_seconds": 0.00026236288249492645,
+      "transfer_compute_update_seconds": 0.8044345723465085,
+      "worker_item_cpu_seconds": 0.9090473297983408,
+      "worker_conversion_cpu_seconds": 0.16756190871819854,
+      "loss": 1.5136241912841797
+    },
+    {
+      "step": 9,
+      "total_seconds": 0.8190486701205373,
+      "data_wait_seconds": 0.0002855053171515465,
+      "transfer_compute_update_seconds": 0.8187631648033857,
+      "worker_item_cpu_seconds": 0.865034369751811,
+      "worker_conversion_cpu_seconds": 0.1483447654172778,
+      "loss": 1.4505757093429565
+    },
+    {
+      "step": 10,
+      "total_seconds": 0.7919791182503104,
+      "data_wait_seconds": 0.00022028619423508644,
+      "transfer_compute_update_seconds": 0.7917588320560753,
+      "worker_item_cpu_seconds": 0.899984058458358,
+      "worker_conversion_cpu_seconds": 0.1562814856879413,
+      "loss": 1.3864693641662598
+    },
+    {
+      "step": 11,
+      "total_seconds": 0.7909498349763453,
+      "data_wait_seconds": 0.0002482919953763485,
+      "transfer_compute_update_seconds": 0.790701542980969,
+      "worker_item_cpu_seconds": 0.9067577267996967,
+      "worker_conversion_cpu_seconds": 0.15273209428414702,
+      "loss": 1.7387206554412842
+    }
+  ],
+  "mean_seconds": 0.7979423819109798,
+  "median_seconds": 0.7990742649417371,
+  "mean_data_wait_seconds": 0.0002625013701617718,
+  "median_data_wait_seconds": 0.00026109046302735806,
+  "mean_compute_seconds": 0.797679880540818,
+  "mean_conversion_cpu_ms_per_sample": 10.177214242867194,
+  "mean_loading_preprocessing_cpu_ms_per_sample": 58.7931342452066,
+  "peak_allocated_gib": 40.03106737136841,
+  "peak_reserved_gib": 44.650390625,
+  "training_head_batches": [
+    128
+  ],
+  "inference_noise_draws": 1,
+  "inference_head_batches": [
+    16
+  ],
+  "inference_output_shape": [
+    16,
+    50,
+    8
+  ]
+}

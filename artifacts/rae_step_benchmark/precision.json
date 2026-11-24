@@ -1,0 +1,230 @@
+[
+  {
+    "size": "S",
+    "variant": "rae-1in1",
+    "precision": "fp32",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 185.61939239501953,
+      "backward_ms": 395.1365203857422,
+      "optimizer_ms": 5.354176044464111,
+      "wall_ms": 586.6823960095644
+    },
+    "peak_GiB": 19.5393009185791,
+    "initial_loss": 1.493813157081604,
+    "final_loss": 0.3893173635005951,
+    "parameters": "torch.float32",
+    "optimizer_state": "torch.float32",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "S",
+    "variant": "rae-1in1",
+    "precision": "amp_bf16",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 43.72532653808594,
+      "backward_ms": 91.52233505249023,
+      "optimizer_ms": 5.02236795425415,
+      "wall_ms": 140.73216542601585
+    },
+    "peak_GiB": 11.047037124633789,
+    "initial_loss": 1.4929134845733643,
+    "final_loss": 0.3881557881832123,
+    "parameters": "torch.float32",
+    "optimizer_state": "torch.float32",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "S",
+    "variant": "rae-1in1",
+    "precision": "bf16",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 37.97548866271973,
+      "backward_ms": 80.64764785766602,
+      "optimizer_ms": 5.218832015991211,
+      "wall_ms": 124.80094819329679
+    },
+    "peak_GiB": 9.76228141784668,
+    "initial_loss": 1.4929744005203247,
+    "final_loss": 0.391264408826828,
+    "parameters": "torch.bfloat16",
+    "optimizer_state": "torch.bfloat16",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "S",
+    "variant": "rae-4in1",
+    "precision": "fp32",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 246.88961791992188,
+      "backward_ms": 607.6693420410156,
+      "optimizer_ms": 5.328223943710327,
+      "wall_ms": 860.2547030895948
+    },
+    "peak_GiB": 19.587398052215576,
+    "initial_loss": 0.9687888026237488,
+    "final_loss": 0.37141600251197815,
+    "parameters": "torch.float32",
+    "optimizer_state": "torch.float32",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "S",
+    "variant": "rae-4in1",
+    "precision": "amp_bf16",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 49.58977699279785,
+      "backward_ms": 105.73452758789062,
+      "optimizer_ms": 5.027888059616089,
+      "wall_ms": 160.7969559263438
+    },
+    "peak_GiB": 11.101939678192139,
+    "initial_loss": 0.9699457883834839,
+    "final_loss": 0.37123075127601624,
+    "parameters": "torch.float32",
+    "optimizer_state": "torch.float32",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "S",
+    "variant": "rae-4in1",
+    "precision": "bf16",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 43.82742500305176,
+      "backward_ms": 95.02102279663086,
+      "optimizer_ms": 5.112608194351196,
+      "wall_ms": 144.48573649860919
+    },
+    "peak_GiB": 9.804903984069824,
+    "initial_loss": 0.9698882699012756,
+    "final_loss": 0.3867975175380707,
+    "parameters": "torch.bfloat16",
+    "optimizer_state": "torch.bfloat16",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "B",
+    "variant": "rae-1in1",
+    "precision": "fp32",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 561.3687744140625,
+      "backward_ms": 1176.9434814453125,
+      "optimizer_ms": 8.188447952270508,
+      "wall_ms": 1746.9464482273906
+    },
+    "peak_GiB": 35.15729236602783,
+    "initial_loss": 1.253678560256958,
+    "final_loss": 0.39263421297073364,
+    "parameters": "torch.float32",
+    "optimizer_state": "torch.float32",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "B",
+    "variant": "rae-1in1",
+    "precision": "amp_bf16",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 89.97777557373047,
+      "backward_ms": 181.4892120361328,
+      "optimizer_ms": 8.714399814605713,
+      "wall_ms": 281.1791496351361
+    },
+    "peak_GiB": 19.82180118560791,
+    "initial_loss": 1.254775047302246,
+    "final_loss": 0.3925199508666992,
+    "parameters": "torch.float32",
+    "optimizer_state": "torch.float32",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "B",
+    "variant": "rae-1in1",
+    "precision": "bf16",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 80.39226913452148,
+      "backward_ms": 161.82691192626953,
+      "optimizer_ms": 6.133951902389526,
+      "wall_ms": 248.67999809794128
+    },
+    "peak_GiB": 17.16061782836914,
+    "initial_loss": 1.2546964883804321,
+    "final_loss": 0.409789502620697,
+    "parameters": "torch.bfloat16",
+    "optimizer_state": "torch.bfloat16",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "B",
+    "variant": "rae-4in1",
+    "precision": "fp32",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 842.4325256347656,
+      "backward_ms": 1547.7657470703125,
+      "optimizer_ms": 8.28222370147705,
+      "wall_ms": 2399.084676755592
+    },
+    "peak_GiB": 35.27953815460205,
+    "initial_loss": 0.808620274066925,
+    "final_loss": 0.43244287371635437,
+    "parameters": "torch.float32",
+    "optimizer_state": "torch.float32",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "B",
+    "variant": "rae-4in1",
+    "precision": "amp_bf16",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 100.27486419677734,
+      "backward_ms": 206.62342071533203,
+      "optimizer_ms": 8.434351921081543,
+      "wall_ms": 315.7765206415206
+    },
+    "peak_GiB": 19.905993461608887,
+    "initial_loss": 0.8074085116386414,
+    "final_loss": 0.43207111954689026,
+    "parameters": "torch.float32",
+    "optimizer_state": "torch.float32",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  },
+  {
+    "size": "B",
+    "variant": "rae-4in1",
+    "precision": "bf16",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "timings": {
+      "forward_ms": 90.75649642944336,
+      "backward_ms": 187.34465789794922,
+      "optimizer_ms": 6.208303928375244,
+      "wall_ms": 285.1018907967955
+    },
+    "peak_GiB": 17.216305255889893,
+    "initial_loss": 0.8074036240577698,
+    "final_loss": 0.4570292830467224,
+    "parameters": "torch.bfloat16",
+    "optimizer_state": "torch.bfloat16",
+    "note": "Single A100; synthetic fixed inputs; six measured full updates after three warmups; native BF16 has BF16 AdamW moments, FP32 loss; no convergence claim"
+  }
+]

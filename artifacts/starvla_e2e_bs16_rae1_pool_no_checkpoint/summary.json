@@ -1,0 +1,44 @@
+{
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "batch_per_gpu": 16,
+  "flow_repeats": 8,
+  "inference_noise_samples": 1,
+  "inference_steps": 10,
+  "gradient_checkpointing": false,
+  "workers": 4,
+  "prefetch_factor": 2,
+  "data": "800 local HDF5 episodes / 190373 anchors; fixed sampler seed42",
+  "tactile": "Trainable RAE-1in1-S, pool3x3 (18 tokens), VLM fusion, depth_deform_radial TPS28+bilinear",
+  "timing": "2 warmup then mean of 10 real-data steps: next(DataLoader), H2D, forward, backward, clipping, AdamW; worker prefetch enabled; excludes startup and DDP communication",
+  "image_preprocessing": "Existing CPU/PIL/HF image path retained",
+  "results": [
+    {
+      "model": "groot",
+      "vision_mean_seconds": 0.7688061737455427,
+      "tactile_mean_seconds": 0.7979423819109798,
+      "vision_peak_allocated_gib": 37.75896692276001,
+      "tactile_peak_allocated_gib": 40.03106737136841,
+      "previous_checkpointed_tactile_seconds": 1.0427402861882,
+      "tactile_step_time_reduction_percent": 23.476402275785635,
+      "tactile_data_wait_ms": 0.2625013701617718,
+      "gradient_checkpointing_active": false,
+      "training_noise_repeats": 8,
+      "inference_noise_draws": 1,
+      "inference_steps": 10
+    },
+    {
+      "model": "pi",
+      "vision_mean_seconds": 0.9307111344300211,
+      "tactile_mean_seconds": 0.9675964787136764,
+      "vision_peak_allocated_gib": 50.95278978347778,
+      "tactile_peak_allocated_gib": 53.84244775772095,
+      "previous_checkpointed_tactile_seconds": 1.216582781681791,
+      "tactile_step_time_reduction_percent": 20.466038704239963,
+      "tactile_data_wait_ms": 0.26080822572112083,
+      "gradient_checkpointing_active": false,
+      "training_noise_repeats": 8,
+      "inference_noise_draws": 1,
+      "inference_steps": 10
+    }
+  ]
+}

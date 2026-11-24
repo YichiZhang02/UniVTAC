@@ -1,0 +1,167 @@
+{
+  "model": "pi",
+  "tactile": true,
+  "micro_batch": 16,
+  "workers": 4,
+  "prefetch_factor": 2,
+  "warmup_steps": 2,
+  "measured_steps": 10,
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "config": {
+    "seed": 42,
+    "steps": 50000,
+    "global_batch": 64,
+    "micro_batch": 16,
+    "action_mode": "relative_joint",
+    "action_contract": "relative_arm_absolute_gripper_v1",
+    "chunk": 50,
+    "execute": 30,
+    "data_root": "/mnt/yichi_data/UniVTAC_downloads/data/isaac51",
+    "base_vlm": "/mnt/yichi_data/UniVTAC_downloads/models/Qwen3.5-2B",
+    "encoder": "rae",
+    "tactile": true,
+    "tactile_input_mode": "depth_deform_radial",
+    "tactile_interpolation": "tps_bilinear",
+    "tactile_interpolation_grid": 28,
+    "rae_variant": "rae-1in1",
+    "rae_size": "S",
+    "tactile_tokens": "pool3x3",
+    "tactile_frames": 1,
+    "tactile_stride": 2,
+    "encoder_checkpoint": null,
+    "action_hidden_dim": 1024,
+    "action_attention_dim": 1024,
+    "action_future_tokens": 0,
+    "learning_rate": 1e-05,
+    "save_interval": 5000,
+    "vision_checkpoint": "/mnt/yichi_data/UniVTAC_downloads/models/resnet18/resnet18-f37072fd.pth",
+    "univtac_checkpoint": "/mnt/yichi_data/UniVTAC_downloads/models/univtac/checkpoints/encoder.pth",
+    "flow_repeats": 8,
+    "action_learning_rate": 0.0001,
+    "num_inference_timesteps": 10,
+    "tactile_fusion": "vlm",
+    "tactile_wrapper": "none",
+    "tactile_rope": "1d",
+    "vlm_attention_mask": "causal",
+    "head_action_queries_only": true,
+    "gradient_checkpointing": false
+  },
+  "method": "Real HDF5 Episodes; next(DataLoader) + H2D + forward + backward + clipping + AdamW; steady-state prefetch; no DDP communication",
+  "gradient_checkpointing_active": false,
+  "status": "ok",
+  "episodes": 800,
+  "frames": 190373,
+  "steps": [
+    {
+      "step": 2,
+      "total_seconds": 0.962628629989922,
+      "data_wait_seconds": 0.00027927616611123085,
+      "transfer_compute_update_seconds": 0.9623493538238108,
+      "worker_item_cpu_seconds": 1.0129906036891043,
+      "worker_conversion_cpu_seconds": 0.17387776589021087,
+      "loss": 2.793748378753662
+    },
+    {
+      "step": 3,
+      "total_seconds": 0.9567538741976023,
+      "data_wait_seconds": 0.0002627922222018242,
+      "transfer_compute_update_seconds": 0.9564910819754004,
+      "worker_item_cpu_seconds": 1.0045154076069593,
+      "worker_conversion_cpu_seconds": 0.18221480818465352,
+      "loss": 7.71484899520874
+    },
+    {
+      "step": 4,
+      "total_seconds": 0.9640381149947643,
+      "data_wait_seconds": 0.00029303785413503647,
+      "transfer_compute_update_seconds": 0.9637450771406293,
+      "worker_item_cpu_seconds": 0.9162402763031423,
+      "worker_conversion_cpu_seconds": 0.16230321256443858,
+      "loss": 2.064030408859253
+    },
+    {
+      "step": 5,
+      "total_seconds": 0.9813759243115783,
+      "data_wait_seconds": 0.0003103013150393963,
+      "transfer_compute_update_seconds": 0.9810656229965389,
+      "worker_item_cpu_seconds": 0.9484584936872125,
+      "worker_conversion_cpu_seconds": 0.16264965431764722,
+      "loss": 3.669581890106201
+    },
+    {
+      "step": 6,
+      "total_seconds": 0.9928418360650539,
+      "data_wait_seconds": 0.0002925768494606018,
+      "transfer_compute_update_seconds": 0.9925492592155933,
+      "worker_item_cpu_seconds": 0.8719166978262365,
+      "worker_conversion_cpu_seconds": 0.1651518028229475,
+      "loss": 2.4846107959747314
+    },
+    {
+      "step": 7,
+      "total_seconds": 0.983020898886025,
+      "data_wait_seconds": 0.00025693606585264206,
+      "transfer_compute_update_seconds": 0.9827639628201723,
+      "worker_item_cpu_seconds": 0.9520451864227653,
+      "worker_conversion_cpu_seconds": 0.16511757299304008,
+      "loss": 3.4120941162109375
+    },
+    {
+      "step": 8,
+      "total_seconds": 0.9627846186049283,
+      "data_wait_seconds": 0.00022802874445915222,
+      "transfer_compute_update_seconds": 0.9625565898604691,
+      "worker_item_cpu_seconds": 0.8992302883416414,
+      "worker_conversion_cpu_seconds": 0.1625064038671553,
+      "loss": 1.9671374559402466
+    },
+    {
+      "step": 9,
+      "total_seconds": 0.9681851561181247,
+      "data_wait_seconds": 0.00019499287009239197,
+      "transfer_compute_update_seconds": 0.9679901632480323,
+      "worker_item_cpu_seconds": 0.8859583348967135,
+      "worker_conversion_cpu_seconds": 0.15509647084400058,
+      "loss": 1.963072419166565
+    },
+    {
+      "step": 10,
+      "total_seconds": 0.9531289231963456,
+      "data_wait_seconds": 0.00023603718727827072,
+      "transfer_compute_update_seconds": 0.9528928860090673,
+      "worker_item_cpu_seconds": 0.9153214027173817,
+      "worker_conversion_cpu_seconds": 0.15824121283367276,
+      "loss": 1.513794183731079
+    },
+    {
+      "step": 11,
+      "total_seconds": 0.951206810772419,
+      "data_wait_seconds": 0.0002541029825806618,
+      "transfer_compute_update_seconds": 0.9509527077898383,
+      "worker_item_cpu_seconds": 0.9215711774304509,
+      "worker_conversion_cpu_seconds": 0.160014471039176,
+      "loss": 2.3446686267852783
+    }
+  ],
+  "mean_seconds": 0.9675964787136764,
+  "median_seconds": 0.9634113667998463,
+  "mean_data_wait_seconds": 0.00026080822572112085,
+  "median_data_wait_seconds": 0.0002598641440272331,
+  "mean_compute_seconds": 0.9673356704879552,
+  "mean_conversion_cpu_ms_per_sample": 10.29483359598089,
+  "mean_loading_preprocessing_cpu_ms_per_sample": 58.30154918076005,
+  "peak_allocated_gib": 53.84244775772095,
+  "peak_reserved_gib": 56.666015625,
+  "training_head_batches": [
+    128
+  ],
+  "inference_noise_draws": 1,
+  "inference_head_batches": [
+    16
+  ],
+  "inference_output_shape": [
+    16,
+    50,
+    8
+  ]
+}

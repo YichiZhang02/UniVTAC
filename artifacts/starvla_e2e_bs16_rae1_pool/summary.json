@@ -1,0 +1,37 @@
+{
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "batch_per_gpu": 16,
+  "flow_repeats": 8,
+  "workers": 4,
+  "prefetch_factor": 2,
+  "data": "800 local HDF5 episodes, 190373 anchors; identical shuffled sampler seed42 for all cases",
+  "tactile": "Trainable RAE-1in1-S, pool3x3, two sensors (18 tokens), depth_deform_radial, TPS28+bilinear; VLM fusion; no wrappers; 1D RoPE; causal mask",
+  "method": "2 warmup then mean of 10 steps; wall time before next(DataLoader) through synchronized AdamW completion; includes data reading/conversion via normal worker prefetch, H2D, forward, backward, clipping and update; excludes initial dataset/statistics/model setup and DDP communication",
+  "conversion_note": "Worker-side conversion time excludes HDF5 reads. This CPU work overlaps GPU execution; it is not an additive fraction of total step time.",
+  "results": [
+    {
+      "model": "groot",
+      "vision_mean_seconds": 0.9722952227573842,
+      "tactile_mean_seconds": 1.0427402861882,
+      "latency_increase_percent": 7.245233935330564,
+      "tactile_mean_data_wait_ms": 0.23792306892573833,
+      "tactile_conversion_ms_per_sample": 10.490279874647968,
+      "tactile_data_preparation_ms_per_sample": 62.62522160832304,
+      "conversion_fraction_of_worker_preparation_percent": 16.750886631998416,
+      "vision_peak_gib": 24.60197639465332,
+      "tactile_peak_gib": 24.95556402206421
+    },
+    {
+      "model": "pi",
+      "vision_mean_seconds": 1.164208925748244,
+      "tactile_mean_seconds": 1.216582781681791,
+      "latency_increase_percent": 4.498664696277421,
+      "tactile_mean_data_wait_ms": 0.2535507548600435,
+      "tactile_conversion_ms_per_sample": 10.331257738289423,
+      "tactile_data_preparation_ms_per_sample": 50.63679424638394,
+      "conversion_fraction_of_worker_preparation_percent": 20.4026694265449,
+      "vision_peak_gib": 33.838037967681885,
+      "tactile_peak_gib": 35.8179235458374
+    }
+  ]
+}

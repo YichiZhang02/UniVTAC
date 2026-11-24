@@ -1,0 +1,12 @@
+Loading weights:   0%|          | 0/617 [00:00<?, ?it/s]Loading weights:  67%|██████▋   | 413/617 [00:00<00:00, 4114.09it/s]Loading weights: 100%|██████████| 617/617 [00:00<00:00, 4143.88it/s]
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+Total number of DiT parameters:  356030490
+{"model": "pi", "tactile": false, "step": 0, "seconds": 18.77123738778755, "loss": 2.1389544010162354}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"model": "pi", "tactile": false, "step": 1, "seconds": 1.2840643501840532, "loss": 10.054408073425293}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"model": "pi", "tactile": false, "step": 2, "seconds": 1.1326171020045877, "loss": 2.89198637008667}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"model": "pi", "tactile": false, "step": 3, "seconds": 1.0563499866984785, "loss": 5.44244909286499}
+{"model": "pi", "tactile": false, "micro_batch": 16, "warmup_steps": 1, "measured_steps": 3, "gpu": "NVIDIA A100-SXM4-80GB", "torch_version": "2.7.0+cu126", "timing": "resident synthetic batch; includes PIL/processor, forward, backward, clipping, AdamW; excludes data loading and DDP", "vlm_sequence_length": 193, "head_query_length": 50, "head_kv_length": 243, "status": "ok", "step_seconds": [1.2840643501840532, 1.1326171020045877, 1.0563499866984785], "mean_seconds": 1.1576771462957065, "median_seconds": 1.1326171020045877, "samples_per_second": 13.820779006648117, "peak_allocated_gib": 33.09701156616211, "peak_reserved_gib": 36.53515625}

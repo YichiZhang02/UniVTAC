@@ -1,0 +1,26 @@
+{
+  "gpu": "A100-SXM4-80GB",
+  "batch_per_gpu": 16,
+  "flow_repeats": 8,
+  "tactile": "RAE-1in1-S (384 dim), pool3x3: 9 tokens per hand, 18 total; VLM fusion; no wrappers; 1D RoPE; causal mask; trainable encoder, random initialization",
+  "method": "1 warmup, median of 3 measured forward/backward/clip/AdamW steps; resident synthetic inputs; excludes data loading and DDP communication",
+  "vision_baseline": "Reused previous no-tactile measurements; tactile encoder config does not affect that path",
+  "results": [
+    {
+      "model": "groot",
+      "vision_seconds": 0.8962978636845946,
+      "tactile_seconds": 0.964320273604244,
+      "latency_increase_percent": 7.589263868153795,
+      "vision_peak_gib": 24.593918800354004,
+      "tactile_peak_gib": 24.950710773468018
+    },
+    {
+      "model": "pi",
+      "vision_seconds": 1.1326171020045877,
+      "tactile_seconds": 1.1286269752308726,
+      "latency_increase_percent": -0.35229264741394317,
+      "vision_peak_gib": 33.09701156616211,
+      "tactile_peak_gib": 35.13757514953613
+    }
+  ]
+}

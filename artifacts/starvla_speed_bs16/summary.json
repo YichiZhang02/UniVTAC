@@ -1,0 +1,25 @@
+{
+  "gpu": "A100-SXM4-80GB",
+  "batch_per_gpu": 16,
+  "flow_repeats": 8,
+  "tactile": "UniVTAC ResNet18 full: 49 tokens per hand, 98 total; VLM injection; no wrappers; 1D RoPE; causal mask",
+  "method": "1 warmup, median of 3 measured forward/backward/clip/AdamW steps; resident synthetic inputs; excludes data loading and DDP communication",
+  "results": [
+    {
+      "model": "groot",
+      "vision_seconds": 0.8962978636845946,
+      "tactile_seconds": 1.058473726734519,
+      "latency_increase_percent": 18.09396960774121,
+      "vision_peak_gib": 24.593918800354004,
+      "tactile_peak_gib": 24.841850757598877
+    },
+    {
+      "model": "pi",
+      "vision_seconds": 1.1326171020045877,
+      "tactile_seconds": 1.2508782320655882,
+      "latency_increase_percent": 10.441404235526154,
+      "vision_peak_gib": 33.09701156616211,
+      "tactile_peak_gib": 37.311596393585205
+    }
+  ]
+}

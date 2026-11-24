@@ -1,0 +1,98 @@
+{
+  "note": "512 sampled real radial clips; precomputed FP32 cache fits page cache. Loader timings include HDF5/conversion or mmap/collation/IPC/pinning; no forward/backward. Cached layout stores four frames contiguously per clip for this benchmark; full production should store each frame once.",
+  "results": [
+    {
+      "mode": "online",
+      "workers": 4,
+      "repeat": 0,
+      "batch": 64,
+      "clips": 512,
+      "total_s": 7.356707234866917,
+      "mean_s_batch": 0.9195884043583646,
+      "median_next_wait_s": 0.12916518235579133,
+      "first_batch_wait_s": 4.032058130018413
+    },
+    {
+      "mode": "online",
+      "workers": 4,
+      "repeat": 1,
+      "batch": 64,
+      "clips": 512,
+      "total_s": 6.928040906321257,
+      "mean_s_batch": 0.8660051132901572,
+      "median_next_wait_s": 0.08665286796167493,
+      "first_batch_wait_s": 3.40684666717425
+    },
+    {
+      "mode": "online",
+      "workers": 8,
+      "repeat": 0,
+      "batch": 64,
+      "clips": 512,
+      "total_s": 4.603154722601175,
+      "mean_s_batch": 0.5753943403251469,
+      "median_next_wait_s": 2.355733886361122e-05,
+      "first_batch_wait_s": 4.095615897793323
+    },
+    {
+      "mode": "online",
+      "workers": 8,
+      "repeat": 1,
+      "batch": 64,
+      "clips": 512,
+      "total_s": 4.05294219404459,
+      "mean_s_batch": 0.5066177742555737,
+      "median_next_wait_s": 0.03188954899087548,
+      "first_batch_wait_s": 3.6649721800349653
+    },
+    {
+      "mode": "precomputed_fp32",
+      "workers": 4,
+      "repeat": 0,
+      "batch": 64,
+      "clips": 512,
+      "total_s": 0.8940705633722246,
+      "mean_s_batch": 0.11175882042152807,
+      "median_next_wait_s": 0.06432035309262574,
+      "first_batch_wait_s": 0.568033040035516
+    },
+    {
+      "mode": "precomputed_fp32",
+      "workers": 4,
+      "repeat": 1,
+      "batch": 64,
+      "clips": 512,
+      "total_s": 0.7619762271642685,
+      "mean_s_batch": 0.09524702839553356,
+      "median_next_wait_s": 0.06268118903972208,
+      "first_batch_wait_s": 0.44669928727671504
+    },
+    {
+      "mode": "precomputed_fp32",
+      "workers": 8,
+      "repeat": 0,
+      "batch": 64,
+      "clips": 512,
+      "total_s": 0.9757170509546995,
+      "mean_s_batch": 0.12196463136933744,
+      "median_next_wait_s": 0.030966980615630746,
+      "first_batch_wait_s": 0.5346479769796133
+    },
+    {
+      "mode": "precomputed_fp32",
+      "workers": 8,
+      "repeat": 1,
+      "batch": 64,
+      "clips": 512,
+      "total_s": 0.6999869938008487,
+      "mean_s_batch": 0.08749837422510609,
+      "median_next_wait_s": 6.084190681576729e-05,
+      "first_batch_wait_s": 0.6368559165857732
+    }
+  ],
+  "H2D_fp32_64clips_ms": 6.211344003677368,
+  "full_unique_frame_cache_GiB": {
+    "fp32": 198.33538055419922,
+    "fp16": 99.16769027709961
+  }
+}

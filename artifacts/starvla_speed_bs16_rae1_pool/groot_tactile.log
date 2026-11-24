@@ -1,0 +1,11 @@
+Loading weights:   0%|          | 0/617 [00:00<?, ?it/s]Loading weights:  67%|██████▋   | 415/617 [00:00<00:00, 4133.78it/s]Loading weights: 100%|██████████| 617/617 [00:00<00:00, 4084.74it/s]
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+Total number of DiT parameters:  256300032
+{"model": "groot", "tactile": true, "step": 0, "seconds": 18.701937870122492, "loss": 2.062978744506836}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"model": "groot", "tactile": true, "step": 1, "seconds": 1.2261648490093648, "loss": 2.404954195022583}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"model": "groot", "tactile": true, "step": 2, "seconds": 0.9563338998705149, "loss": 2.0896780490875244}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"model": "groot", "tactile": true, "step": 3, "seconds": 0.964320273604244, "loss": 2.117710590362549}
+{"model": "groot", "tactile": true, "micro_batch": 16, "warmup_steps": 1, "measured_steps": 3, "gpu": "NVIDIA A100-SXM4-80GB", "torch_version": "2.7.0+cu126", "timing": "resident synthetic batch; includes PIL/processor, forward, backward, clipping, AdamW; excludes data loading and DDP", "vlm_sequence_length": 174, "head_query_length": 50, "head_kv_length": 174, "status": "ok", "step_seconds": [1.2261648490093648, 0.9563338998705149, 0.964320273604244], "mean_seconds": 1.0489396741613746, "median_seconds": 0.964320273604244, "samples_per_second": 15.253498741757454, "peak_allocated_gib": 24.950710773468018, "peak_reserved_gib": 26.591796875}

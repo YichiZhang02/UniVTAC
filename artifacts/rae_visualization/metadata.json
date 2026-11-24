@@ -1,0 +1,35 @@
+{
+  "split": "val",
+  "indices": [
+    0,
+    40,
+    79
+  ],
+  "keys": [
+    "val/grasp_classify_000_left",
+    "val/lift_bottle_000_left",
+    "val/put_bottle_in_shelf_018_right"
+  ],
+  "models": {
+    "vits_rae-1in1": {
+      "checkpoint": "/mnt/yichi_data/UniVTAC/runs/rae_cached_single64_100epoch_20261116/vits_rae-1in1/best.pt",
+      "step": 27500,
+      "selected_clips_mse": 0.00021152764384169132
+    },
+    "vits_rae-4in1": {
+      "checkpoint": "/mnt/yichi_data/UniVTAC/runs/rae_cached_single64_100epoch_20261116/vits_rae-4in1/best.pt",
+      "step": 15000,
+      "selected_clips_mse": 0.00024636476882733405
+    },
+    "vitb_rae-1in1": {
+      "checkpoint": "/mnt/yichi_data/UniVTAC/runs/rae_cached_single64_100epoch_20261116/vitb_rae-1in1/best.pt",
+      "step": 8750,
+      "selected_clips_mse": 0.00019593611068557948
+    },
+    "vitb_rae-4in1": {
+      "checkpoint": "/mnt/yichi_data/UniVTAC/runs/rae_cached_single64_100epoch_20261116/vitb_rae-4in1/best.pt",
+      "step": 12500,
+      "selected_clips_mse": 0.00017508919700048864
+    }
+  }
+}

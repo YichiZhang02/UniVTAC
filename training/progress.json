@@ -1,0 +1,45 @@
+{
+  "upstream": "d541e5568227ca3b66104d294f63c80acad7c52c",
+  "dlc_probe_job": "dlc1sl5kwbyp3itw",
+  "dlc_probe_status": "Succeeded",
+  "checks": {
+    "smoke-act": "/mnt/yichi_data/miniconda3/envs/univtac/lib/python3.11/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.\n  warnings.warn(\n/mnt/yichi_data/miniconda3/envs/univtac/lib/python3.11/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=None`.\n  warnings.warn(msg)\nnumber of parameters: 95.58M\nact forward/backward passed 75.97962188720703\n",
+    "smoke-starvla": "\nLoading weights:   0%|          | 0/617 [00:00<?, ?it/s]\nLoading weights:  70%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588   | 433/617 [00:00<00:00, 4291.27it/s]\nLoading weights: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 617/617 [00:00<00:00, 4543.07it/s]\nKwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`\nTotal number of DiT parameters:  150740992\nstarvla forward/backward passed 1.7449761629104614\n",
+    "smoke-rae": "RAE reconstruction/backward and token modes passed\n",
+    "contract-test": "Synthetic eight-task, next-step relative actions and terminal padding passed\n",
+    "ddp-smoke-act": "nivtac/lib/python3.11/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.\n  warnings.warn(\n/mnt/yichi_data/miniconda3/envs/univtac/lib/python3.11/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=None`.\n  warnings.warn(msg)\n/mnt/yichi_data/miniconda3/envs/univtac/lib/python3.11/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.\n  warnings.warn(\n/mnt/yichi_data/miniconda3/envs/univtac/lib/python3.11/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=None`.\n  warnings.warn(msg)\nnumber of parameters: 95.58M\nnumber of parameters: 95.58M\n{\"step\": 1, \"loss\": 81.73981475830078, \"epoch\": 0, \"global_batch\": 64}\ndsw-1090081-5865cf5cbd-wzw2w:3137031:3137610 [1] NCCL INFO comm 0x55e06a6a7b00 rank 1 nranks 2 cudaDev 1 busId 4000 - Destroy COMPLETE\ndsw-1090081-5865cf5cbd-wzw2w:3137027:3137611 [0] NCCL INFO comm 0x5564a3aed8a0 rank 0 nranks 2 cudaDev 0 busId 3000 - Destroy COMPLETE\n",
+    "smoke-act-rae": "/mnt/yichi_data/miniconda3/envs/univtac/lib/python3.11/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.\n  warnings.warn(\n/mnt/yichi_data/miniconda3/envs/univtac/lib/python3.11/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=None`.\n  warnings.warn(msg)\nnumber of parameters: 95.58M\nact forward/backward passed 82.6876220703125\n",
+    "ddp-smoke-starvla": "sor_kwargs` dict, not in `**kwargs`\n[rank0]:[W1113 11:36:01.608374436 reducer.cpp:1430] Warning: find_unused_parameters=True was specified in DDP constructor, but did not find any unused parameters in the forward pass. This flag results in an extra traversal of the autograd graph every iteration,  which can adversely affect performance. If your model indeed never has any unused parameters in the forward pass, consider turning this flag off. Note that this warning may be a false positive if your model has flow control causing later iterations to have unused parameters. (function operator())\n[rank1]:[W1113 11:36:01.614880240 reducer.cpp:1430] Warning: find_unused_parameters=True was specified in DDP constructor, but did not find any unused parameters in the forward pass. This flag results in an extra traversal of the autograd graph every iteration,  which can adversely affect performance. If your model indeed never has any unused parameters in the forward pass, consider turning this flag off. Note that this warning may be a false positive if your model has flow control causing later iterations to have unused parameters. (function operator())\n{\"step\": 1, \"loss\": 2.0427085161209106, \"epoch\": 0, \"global_batch\": 64}\ndsw-1090081-5865cf5cbd-wzw2w:3138120:3139993 [0] NCCL INFO comm 0x55ce9db6fdd0 rank 0 nranks 2 cudaDev 0 busId 3000 - Destroy COMPLETE\ndsw-1090081-5865cf5cbd-wzw2w:3138121:3139994 [1] NCCL INFO comm 0x55ab34975e80 rank 1 nranks 2 cudaDev 1 busId 4000 - Destroy COMPLETE\n",
+    "smoke-starvla-rae": "\nLoading weights:   0%|          | 0/617 [00:00<?, ?it/s]\nLoading weights: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 617/617 [00:00<00:00, 9650.42it/s]\nTotal number of DiT parameters:  150740992\nKwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`\nstarvla forward/backward passed 1.880350947380066\n",
+    "inference-test": "/mnt/yichi_data/miniconda3/envs/univtac/lib/python3.11/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.\n  warnings.warn(\n/mnt/yichi_data/miniconda3/envs/univtac/lib/python3.11/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=None`.\n  warnings.warn(msg)\nnumber of parameters: 95.58M\nACT checkpoint reload and 30-step absolute inference passed\n"
+  },
+  "formal_training": [
+    {
+      "model": "act",
+      "job": "dlc39vqq334arqyg",
+      "run": "/mnt/yichi_data/UniVTAC/runs/univtac-clean-act-20261113-114158",
+      "steps": 50000
+    },
+    {
+      "model": "starvla",
+      "job": "dlc1ci1k3v8te0r9",
+      "run": "/mnt/yichi_data/UniVTAC/runs/univtac-clean-starvla-20261113-114435",
+      "steps": 50000
+    }
+  ],
+  "data_verification": {
+    "isaac51": {
+      "grasp_classify": 100,
+      "insert_HDMI": 100,
+      "insert_hole": 100,
+      "insert_tube": 100,
+      "lift_bottle": 100,
+      "lift_can": 100,
+      "pull_out_key": 100,
+      "put_bottle_in_shelf": 100
+    },
+    "contact": 638,
+    "qwen_bytes": 4548221488
+  },
+  "flow8_check": "17/617 [00:00<00:00, 3992.13it/s]\nTotal number of DiT parameters:  150740992\nKwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`\nKwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`\nKwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`\nKwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`\n{\"step\": 1, \"loss\": 2.1255167424678802, \"epoch\": 0, \"global_batch\": 64}\n[rank0]:[W1113 11:44:45.882107334 ProcessGroupNCCL.cpp:1476] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())\n"
+}

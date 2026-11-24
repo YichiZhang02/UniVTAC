@@ -13,6 +13,7 @@ import traceback
 from pathlib import Path
 from typing import Literal
 from omegaconf import OmegaConf
+from training import eval_results
 
 from envs.utils.env_parser import (
     add_config_override_argument,
@@ -64,6 +65,7 @@ parser.add_argument(
     "--print_only",
     action='store_true',
 )
+parser.add_argument('--result-file')
 add_config_override_argument(parser)
 AppLauncher.add_app_launcher_args(parser)
 
@@ -81,6 +83,7 @@ task_config, task_config_file = load_task_config(
 # launch omniverse app, must done before importing anything from omni.isaac
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+_cleanup_resources=[]
 
 import traceback
 import importlib
@@ -104,6 +107,23 @@ def eval_policy(
     start_seed, max_seed, test_total_num, instructions, instruciton_type:Literal['seen', 'unseen']='seen'
 ):
     test_num, succ_num, seed = 0, 0, start_seed
+
+    context=dict(task=args_cli.task_name,checkpoint=__import__('os').environ.get('CHECKPOINT'),
+                 requested=test_total_num,start_seed=start_seed,step_lim=int(task.cfg.step_lim))
+    recorded=eval_results.load(args_cli.result_file,context)
+    test_num=recorded['valid'];succ_num=recorded['successes']
+    if recorded['rollouts']:seed=max(r['seed'] for r in recorded['rollouts'])+1
+    consecutive_errors=0
+    inference=dict(seconds=0.,calls=0)
+    if hasattr(getattr(policy,'model',None),'predict'):
+        original_predict=policy.model.predict
+        def measured_predict(*args,**kwargs):
+            begin=time.perf_counter()
+            value=original_predict(*args,**kwargs)
+            inference['seconds']+=time.perf_counter()-begin
+            inference['calls']+=1
+            return value
+        policy.model.predict=measured_predict
 
     seed_path = task.save_root.parent / 'seeds.json'
     seed_path.parent.mkdir(parents=True, exist_ok=True)
@@ -151,6 +171,7 @@ def eval_policy(
             task.reset(seed=seed, instructions=instructions[instruciton_type])
             task.mean_steps = task.cfg.step_lim
             policy.reset()
+            inference.update(seconds=0.,calls=0)
             while task.take_action_cnt < task.cfg.step_lim:
                 observation = task._get_observations()
                 policy.eval(task, observation)
@@ -162,14 +183,25 @@ def eval_policy(
         except Exception as e:
             log(f"[{test_num:<3d}] Seed {seed} occurred exception: {e}\n{traceback.format_exc()}")
             succ_status = 'error'
-            task.clean_cache(result=succ_status)
             test_num -= 1
+            # Save the exception before cleanup, which can fail on a broken scene.
+            eval_results.append(args_cli.result_file,recorded,seed,'error',error=str(e))
+            try:task.clean_cache(result=succ_status)
+            except Exception as cleanup_error:log(f'Rollout cleanup failed after saved error: {cleanup_error}')
+            consecutive_errors+=1
+            if 'marker attachments' in str(e):
+                raise RuntimeError('Tactile attachment reset failed; restart the simulator before retrying; rollout retained as error') from e
+            if consecutive_errors>=5:raise RuntimeError('Five consecutive rollout errors; inspect result/log') from e
         else:
             eval_cost = time.perf_counter() - eval_start
             
             if succ:
                 succ_num += 1
             succ_status = 'success' if succ else 'failed'
+            consecutive_errors=0
+            eval_results.append(args_cli.result_file,recorded,seed,succ_status,
+                                action_steps=int(task.take_action_cnt),seconds=eval_cost,
+                                inference_seconds=inference['seconds'],inference_calls=inference['calls'])
             task.clean_cache(result=succ_status)
             log(f"[{test_num:<3d}] Seed {seed} {succ_status} after {eval_cost:.2f} s.\n"
                 f"steps: {task.step_count:<5d}, actions: {task.take_action_cnt:<5d}.\n"
@@ -241,6 +273,7 @@ def main():
 
     init_start = time.perf_counter()
     policy:BasePolicy = policy_module.Policy(deploy_config)
+    _cleanup_resources.append(policy)
     policy_init_cost = time.perf_counter() - init_start
 
     init_start = time.perf_counter()
@@ -253,6 +286,7 @@ def main():
         save_dir=save_dir,
     )
     task: BaseTask = task_env.task
+    _cleanup_resources.insert(0,task)
     task_init_cost = time.perf_counter() - init_start
     
     log_path = task.save_root / f"log.log"
@@ -273,11 +307,21 @@ def main():
         instructions=instructions,
         instruciton_type=deploy_config.get("instruction_type", "seen")
     )
-    log(f"Final Result: {results['succ_num']}/{results['test_num']}({results['succ_num']/results['test_num']*100:.2f}%) success.")
+    log(f"Final Result: {results['succ_num']}/{results['test_num']}({results['succ_num']/max(results['test_num'],1)*100:.2f}%) success.")
     
-    task.close()
-    policy.close()
-    simulation_app.close()
+
 
 if __name__ == "__main__":
-    main()
+    from training.eval_cleanup import close_bounded
+    exit_code=0
+    try:
+        main()
+    except BaseException:
+        exit_code=1
+        traceback.print_exc()
+    finally:
+        close_bounded([*_cleanup_resources,simulation_app],exit_code)
+        # Avoid a second, unbounded Kit/C++ teardown during Python finalization.
+        sys.stdout.flush();sys.stderr.flush()
+        __import__('os')._exit(exit_code)
+

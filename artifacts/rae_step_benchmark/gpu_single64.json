@@ -1,0 +1,70 @@
+[
+  {
+    "size": "S",
+    "variant": "rae-1in1",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "micro_batch": 64,
+    "accumulation": 1,
+    "local_clips_per_update": 64,
+    "global_clips_at_4ranks": 64,
+    "note": "Single-GPU compute only, data already on GPU; no DDP communication or data wait",
+    "timings": {
+      "forward_ms": 43.72051239013672,
+      "backward_ms": 91.60148620605469,
+      "clip_optimizer_ms": 1.7691199779510498,
+      "wall_ms": 137.95390189625323
+    },
+    "peak_GiB": 10.975656509399414
+  },
+  {
+    "size": "S",
+    "variant": "rae-4in1",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "micro_batch": 64,
+    "accumulation": 1,
+    "local_clips_per_update": 64,
+    "global_clips_at_4ranks": 64,
+    "note": "Single-GPU compute only, data already on GPU; no DDP communication or data wait",
+    "timings": {
+      "forward_ms": 49.65072059631348,
+      "backward_ms": 105.69636535644531,
+      "clip_optimizer_ms": 1.8451200127601624,
+      "wall_ms": 158.1721226684749
+    },
+    "peak_GiB": 11.030284404754639
+  },
+  {
+    "size": "B",
+    "variant": "rae-1in1",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "micro_batch": 64,
+    "accumulation": 1,
+    "local_clips_per_update": 64,
+    "global_clips_at_4ranks": 64,
+    "note": "Single-GPU compute only, data already on GPU; no DDP communication or data wait",
+    "timings": {
+      "forward_ms": 89.87276840209961,
+      "backward_ms": 181.82621002197266,
+      "clip_optimizer_ms": 5.482879877090454,
+      "wall_ms": 278.19539699703455
+    },
+    "peak_GiB": 19.747029304504395
+  },
+  {
+    "size": "B",
+    "variant": "rae-4in1",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "micro_batch": 64,
+    "accumulation": 1,
+    "local_clips_per_update": 64,
+    "global_clips_at_4ranks": 64,
+    "note": "Single-GPU compute only, data already on GPU; no DDP communication or data wait",
+    "timings": {
+      "forward_ms": 100.79547119140625,
+      "backward_ms": 207.4952163696289,
+      "clip_optimizer_ms": 5.7571680545806885,
+      "wall_ms": 314.93707094341516
+    },
+    "peak_GiB": 19.830016136169434
+  }
+]

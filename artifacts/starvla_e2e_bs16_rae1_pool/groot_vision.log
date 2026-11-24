@@ -1,0 +1,27 @@
+Loading weights:   0%|          | 0/617 [00:00<?, ?it/s]Loading weights:  62%|██████▏   | 383/617 [00:00<00:00, 3827.00it/s]Loading weights: 100%|██████████| 617/617 [00:00<00:00, 4086.68it/s]
+Total number of DiT parameters:  256300032
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 0, "total_seconds": 19.29887264687568, "data_wait_seconds": 0.3909261552616954, "transfer_compute_update_seconds": 18.907946491613984, "worker_item_cpu_seconds": 0.3259477261453867, "worker_conversion_cpu_seconds": 0.0, "loss": 1.4718345403671265}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 1, "total_seconds": 1.254653817974031, "data_wait_seconds": 0.0002633463591337204, "transfer_compute_update_seconds": 1.2543904716148973, "worker_item_cpu_seconds": 0.3277071709744632, "worker_conversion_cpu_seconds": 0.0, "loss": 3.7128331661224365}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 2, "total_seconds": 0.9676596689969301, "data_wait_seconds": 0.00035690097138285637, "transfer_compute_update_seconds": 0.9673027680255473, "worker_item_cpu_seconds": 0.3433212423697114, "worker_conversion_cpu_seconds": 0.0, "loss": 1.9647009372711182}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 3, "total_seconds": 0.940667100250721, "data_wait_seconds": 0.00027275411412119865, "transfer_compute_update_seconds": 0.9403943461365998, "worker_item_cpu_seconds": 0.3309436053968966, "worker_conversion_cpu_seconds": 0.0, "loss": 4.794323444366455}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 4, "total_seconds": 0.935614706017077, "data_wait_seconds": 0.000254225917160511, "transfer_compute_update_seconds": 0.9353604800999165, "worker_item_cpu_seconds": 0.28876367257907987, "worker_conversion_cpu_seconds": 0.0, "loss": 1.860350251197815}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 5, "total_seconds": 0.9647379671223462, "data_wait_seconds": 0.00022110110148787498, "transfer_compute_update_seconds": 0.9645168660208583, "worker_item_cpu_seconds": 0.28990422701463103, "worker_conversion_cpu_seconds": 0.0, "loss": 2.0362608432769775}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 6, "total_seconds": 1.1748708370141685, "data_wait_seconds": 0.00027695903554558754, "transfer_compute_update_seconds": 1.174593877978623, "worker_item_cpu_seconds": 0.323534844443202, "worker_conversion_cpu_seconds": 0.0, "loss": 2.2214696407318115}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 7, "total_seconds": 0.9384796479716897, "data_wait_seconds": 0.00027646636590361595, "transfer_compute_update_seconds": 0.9382031816057861, "worker_item_cpu_seconds": 0.3097235281020403, "worker_conversion_cpu_seconds": 0.0, "loss": 1.9866966009140015}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 8, "total_seconds": 0.9607121148146689, "data_wait_seconds": 0.00022997800260782242, "transfer_compute_update_seconds": 0.9604821368120611, "worker_item_cpu_seconds": 0.2813076744787395, "worker_conversion_cpu_seconds": 0.0, "loss": 1.5091947317123413}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 9, "total_seconds": 0.9361519198864698, "data_wait_seconds": 0.00023166509345173836, "transfer_compute_update_seconds": 0.9359202547930181, "worker_item_cpu_seconds": 0.30589616345241666, "worker_conversion_cpu_seconds": 0.0, "loss": 1.4898830652236938}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 10, "total_seconds": 0.9629659750498831, "data_wait_seconds": 0.00022794678807258606, "transfer_compute_update_seconds": 0.9627380282618105, "worker_item_cpu_seconds": 0.31797170639038086, "worker_conversion_cpu_seconds": 0.0, "loss": 1.406030535697937}
+Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+{"step": 11, "total_seconds": 0.9410922904498875, "data_wait_seconds": 0.00010219309478998184, "transfer_compute_update_seconds": 0.9409900973550975, "worker_item_cpu_seconds": 0.3098593498580158, "worker_conversion_cpu_seconds": 0.0, "loss": 1.750753402709961}
+{"model": "groot", "tactile": false, "micro_batch": 16, "workers": 4, "prefetch_factor": 2, "warmup_steps": 2, "measured_steps": 10, "gpu": "NVIDIA A100-SXM4-80GB", "method": "Real HDF5 Episodes; next(DataLoader) + H2D + forward + backward + clipping + AdamW; steady-state prefetch; no DDP communication", "status": "ok", "episodes": 800, "frames": 190373, "mean_seconds": 0.9722952227573842, "median_seconds": 0.9509022026322782, "mean_data_wait_seconds": 0.00024501904845237733, "median_data_wait_seconds": 0.0002429455053061247, "mean_compute_seconds": 0.9720502037089318, "mean_conversion_cpu_ms_per_sample": 0.0, "mean_loading_preprocessing_cpu_ms_per_sample": 19.382662588031963, "peak_allocated_gib": 24.60197639465332, "peak_reserved_gib": 24.91015625}

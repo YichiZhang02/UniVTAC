@@ -1,0 +1,42 @@
+[
+  {
+    "size": "S",
+    "variant": "rae-1in1",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "wall_s_median": 0.14311458496376872,
+    "wall_s_mean": 0.14313544534767667,
+    "data_wait_s_mean": 0.00018404261209070683,
+    "note": "End-to-end single GPU, cached FP32 radial tensors in page cache, 4 workers; six steady-state updates excluding startup/warmup"
+  },
+  {
+    "size": "S",
+    "variant": "rae-4in1",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "wall_s_median": 0.16297889198176563,
+    "wall_s_mean": 0.1629949026585867,
+    "data_wait_s_mean": 0.00026239284003774327,
+    "note": "End-to-end single GPU, cached FP32 radial tensors in page cache, 4 workers; six steady-state updates excluding startup/warmup"
+  },
+  {
+    "size": "B",
+    "variant": "rae-1in1",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "wall_s_median": 0.28134079556912184,
+    "wall_s_mean": 0.28132460770818096,
+    "data_wait_s_mean": 0.0001770486899962028,
+    "note": "End-to-end single GPU, cached FP32 radial tensors in page cache, 4 workers; six steady-state updates excluding startup/warmup"
+  },
+  {
+    "size": "B",
+    "variant": "rae-4in1",
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "batch": 64,
+    "wall_s_median": 0.31868086010217667,
+    "wall_s_mean": 0.31877351909254986,
+    "data_wait_s_mean": 0.00020295319457848868,
+    "note": "End-to-end single GPU, cached FP32 radial tensors in page cache, 4 workers; six steady-state updates excluding startup/warmup"
+  }
+]
